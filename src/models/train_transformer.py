@@ -192,6 +192,7 @@ def main():
     tb_logger = pl_loggers.TensorBoardLogger('./models/logs')
 
     trainer = pl.Trainer(
+        logger=tb_logger,
         max_epochs=60,
         gpus=1,
         precision=16,
