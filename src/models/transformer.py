@@ -5,7 +5,7 @@ from torch import nn
 
 class Transformer(nn.Module):
 
-    def __init__(self, vocab_size, N, d_model, d_ff, h, d_k, d_v, p_drop):
+    def __init__(self, vocab_size, N, d_model, d_ff, h, d_k, d_v, p_drop, max_len):
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -16,53 +16,75 @@ class Transformer(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
         self.p_drop = p_drop
+        self.max_len = max_len
 
         self.encoder = TransformerEncoder(N, d_model, d_ff, h, d_k, d_v, p_drop)
         self.decoder = TransformerDecoder(N, d_model, d_ff, h, d_k, d_v, p_drop)
         self.dropout = nn.Dropout(p=p_drop)
 
-        self.positional_encoding = PositionalEncoding(d_model, 1024)
+        self.positional_encoding = PositionalEncoding(d_model, max_len)
 
+        # Input embedding, output embedding and next_token_classifier share same weights
         self.input_embedding = nn.Embedding(vocab_size, d_model)
         self.output_embedding = nn.Embedding(vocab_size, d_model)
         self.next_token_classifier = nn.Linear(d_model, vocab_size, bias=False)
         self.output_embedding.weight = self.input_embedding.weight
         self.next_token_classifier.weight = self.input_embedding.weight
 
-    def forward(self, input_sequence, input_attention_mask, output_sequence, output_attention_mask):
+    def forward(self, input_sequence: torch.LongTensor, input_attention_mask: torch.BoolTensor,
+                      output_sequence: torch.LongTensor, output_attention_mask: torch.BoolTensor):
         """
-        :param input_sequence: batch_size x input_seq_len
-        :param input_attention_mask: batch_size x input_seq_len
-        :param output_sequence: batch_size x output_seq_len
-        :param output_attention_mask: batch_size x output_seq_len
-        :return: next_token_logits: batch_size x output_seq_len x vocab_size
-        """
+        :param input_sequence: batch_size x input_seq_len - token ids for input sequences
+        :param input_attention_mask: batch_size x input_seq_len - attention masks for input sequences
+        (False for padding tokens, True otherwise)
+        :param output_sequence: batch_size x output_seq_len - token_ids for output sequence
+        :param output_attention_mask: batch_size x output_seq_len - attention masks for input sequences
+        (False for padding tokens, True otherwise)
+        :return next_token_logits: batch_size x output_seq_len x vocab_size - next token probability distribution
+        logits for each position in output_sequence. Apply softmax to acquire probability distributions.
 
-        import pdb; pdb.set_trace()
-        encoded_input = self.encoder_function(input_sequence, input_attention_mask)
+        """
+        encoded_input_sequence = self.encoder_function(input_sequence, input_attention_mask)
         next_token_logits = self.decoder_function(
-            encoded_input, input_attention_mask,
+            encoded_input_sequence, input_attention_mask,
             output_sequence, output_attention_mask
         )
 
         return next_token_logits
 
     def encoder_function(self, input_sequence, input_attention_mask):
-        encoded_input_sequence = self.input_embedding(input_sequence) * math.sqrt(self.d_model)
+        """
+        Encode input sequences into vector representations. Each position in input sequences gets a corresponding
+        vector of size d_model.
+        :param input_sequence: batch_size x input_seq_len - token ids for input sequences
+        :param input_attention_mask: batch_size x input_seq_len - attention masks for input sequences
+        (False for padding tokens, True otherwise)
+        :return encoded_input_sequence: batch_size x input_seq_len x d_model
+        """
+        encoded_input_sequence = self.input_embedding(input_sequence)
         encoded_input_sequence = self.positional_encoding(encoded_input_sequence)
         encoded_input_sequence = self.dropout(encoded_input_sequence)
         encoded_input_sequence = self.encoder(encoded_input_sequence, input_attention_mask)
         return encoded_input_sequence
 
     def decoder_function(self, encoded_input_sequence, input_attention_mask, output_sequence, output_attention_mask):
-        encoded_output_sequence = self.output_embedding(output_sequence) * math.sqrt(self.d_model)
+        """
+        Based on encoded input sequences and output sequences predict next tokens for each position in input sequences.
+        :param encoded_input_sequence: batch_size x input_seq_len x d_model
+        :param input_attention_mask: batch_size x input_seq_len
+        :param output_sequence: batch_size x output_seq_len
+        :param output_attention_mask: batch_size x output_seq_len
+        :return next_token_logits: batch_size x output_seq_len x vocab_size
+        """
+        encoded_output_sequence = self.output_embedding(output_sequence)
         encoded_output_sequence = self.positional_encoding(encoded_output_sequence)
         encoded_output_sequence = self.dropout(encoded_output_sequence)
         encoded_output_sequence = self.decoder(
             encoded_input_sequence, input_attention_mask,
             encoded_output_sequence, output_attention_mask
         )
-        next_token_logits = self.next_token_classifier(encoded_output_sequence)
+        # Scale logits by d_model ** -0.5
+        next_token_logits = self.next_token_classifier(encoded_output_sequence) / math.sqrt(self.d_model)
         return next_token_logits
 
 
@@ -80,7 +102,7 @@ class TransformerEncoder(nn.Module):
 
         self.encoder_layers = nn.ModuleList([
             TransformerEncoderLayer(d_model, d_ff, h, d_k, d_v, p_drop)
-            for i in range(N)
+            for _ in range(N)
         ])
 
     def forward(self, encoded_input_sequence, input_attention_mask):
@@ -108,7 +130,7 @@ class TransformerEncoderLayer(nn.Module):
         self.d_v = d_v
         self.p_drop = p_drop
 
-        self.multihead_attention = MultiHeadAttention(d_model, h, d_k, d_v, False)
+        self.multi_head_attention = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=False)
         self.feed_forward = FeedForward(d_model, d_ff)
         self.layer_norm_1 = nn.LayerNorm(d_model)
         self.layer_norm_2 = nn.LayerNorm(d_model)
@@ -120,18 +142,24 @@ class TransformerEncoderLayer(nn.Module):
         :param attention_mask: batch_size x input_seq_len
         :return: batch_size x input_seq_len x d_model
         """
-        encoded_input = self.layer_norm_1(
-            encoded_input + self.multihead_attention(
+
+        # Apply self-attention
+        self_attention = self.multi_head_attention(
                 encoded_input,
                 encoded_input,
                 encoded_input,
-                attention_mask,
                 attention_mask,
             )
-        )
-        encoded_input = self.layer_norm_2(
-            encoded_input + self.feed_forward(encoded_input)
-        )
+
+        self_attention = self.dropout(self_attention)
+        encoded_input = self.layer_norm_1(encoded_input + self_attention)
+
+        # Apply feed-forward layers
+        feed_forward = self.feed_forward(encoded_input)
+        feed_forward = self.dropout(feed_forward)
+
+        encoded_input = self.layer_norm_2(encoded_input + feed_forward)
+
         return encoded_input
 
 
@@ -171,8 +199,8 @@ class TransformerDecoderLayer(nn.Module):
         self.d_v = d_v
         self.p_drop = p_drop
 
-        self.multihead_attention_1 = MultiHeadAttention(d_model, h, d_k, d_v, True)
-        self.multihead_attention_2 = MultiHeadAttention(d_model, h, d_k, d_v, False)
+        self.multi_head_attention_1 = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=True)
+        self.multi_head_attention_2 = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=False)
         self.feed_forward = FeedForward(d_model, d_ff)
         self.layer_norm_1 = nn.LayerNorm(d_model)
         self.layer_norm_2 = nn.LayerNorm(d_model)
@@ -182,32 +210,30 @@ class TransformerDecoderLayer(nn.Module):
     def forward(self, input_sequence_encoding, input_attention_mask, output_sequence_encoding, output_attention_mask):
 
         # Apply self-attention
-        output_sequence_encoding_delta = self.multihead_attention_1(
+        self_attention = self.multi_head_attention_1(
             output_sequence_encoding,
             output_sequence_encoding,
             output_sequence_encoding,
-            output_attention_mask,
             output_attention_mask,
         )
 
-        output_sequence_encoding_delta = self.dropout(output_sequence_encoding_delta)
-        output_sequence_encoding = self.layer_norm_1(output_sequence_encoding + output_sequence_encoding_delta)
+        self_attention = self.dropout(self_attention)
+        output_sequence_encoding = self.layer_norm_1(output_sequence_encoding + self_attention)
 
-        # Apply attention over encoder output
-        output_sequence_encoding_delta = self.multihead_attention_2(
+        # Apply cross-attention over encoder output
+        cross_attention = self.multi_head_attention_2(
             output_sequence_encoding,
             input_sequence_encoding,
             input_sequence_encoding,
-            output_attention_mask,
             input_attention_mask,
         )
-        output_sequence_encoding_delta = self.dropout(output_sequence_encoding_delta)
-        output_sequence_encoding = self.layer_norm_2(output_sequence_encoding + output_sequence_encoding_delta)
+        cross_attention = self.dropout(cross_attention)
+        output_sequence_encoding = self.layer_norm_2(output_sequence_encoding + cross_attention)
 
         # Apply feed-forward layers
-        output_sequence_encoding_delta = self.feed_forward(output_sequence_encoding)
-        output_sequence_encoding_delta = self.dropout(output_sequence_encoding_delta)
-        output_sequence_encoding = self.layer_norm_3(output_sequence_encoding + output_sequence_encoding_delta)
+        feed_forward = self.feed_forward(output_sequence_encoding)
+        feed_forward = self.dropout(feed_forward)
+        output_sequence_encoding = self.layer_norm_3(output_sequence_encoding + feed_forward)
 
         return output_sequence_encoding
 
@@ -221,29 +247,22 @@ class MultiHeadAttention(nn.Module):
         self.d_v = d_v
         self.mask_back_connections = mask_back_connections
 
-        self.queries_transform_w = nn.Parameter(torch.empty(h, 1, d_model, d_k))
-        # self.queries_transform_b = nn.Parameter(t.empty(h, 1, 1, d_k))
-        self.keys_transform_w = nn.Parameter(torch.empty(h, 1, d_model, d_k))
-        # self.keys_transform_b = nn.Parameter(t.empty(h, 1, 1, d_k))
-        self.values_transform_w = nn.Parameter(torch.empty(h, 1, d_model, d_v))
-        # self.values_transform_b = nn.Parameter(t.empty(h, 1, 1, d_v))
+        self.queries_transform = nn.Parameter(torch.empty(h, 1, d_model, d_k))
+        self.keys_transform = nn.Parameter(torch.empty(h, 1, d_model, d_k))
+        self.values_transform = nn.Parameter(torch.empty(h, 1, d_model, d_v))
 
-        nn.init.xavier_uniform_(self.queries_transform_w)
-        # t.nn.init.xavier_uniform_(self.queries_transform_b)
-        nn.init.xavier_uniform_(self.keys_transform_w)
-        # t.nn.init.xavier_uniform_(self.keys_transform_b)
-        nn.init.xavier_uniform_(self.values_transform_w)
-        # t.nn.init.xavier_uniform_(self.values_transform_b)
+        nn.init.xavier_uniform_(self.queries_transform)
+        nn.init.xavier_uniform_(self.keys_transform)
+        nn.init.xavier_uniform_(self.values_transform)
 
         self.output_transform = nn.Parameter(torch.empty(h * d_v, d_model))
         nn.init.xavier_uniform_(self.output_transform)
 
-    def forward(self, queries, keys, values, queries_attention_mask, keys_attention_mask):
+    def forward(self, queries, keys, values, keys_attention_mask):
         """
         :param queries: batch_size x queries_len x d_model
         :param keys: batch_size x keys_len x d_model
         :param values: batch_size x keys_len x d_model
-        :param queries_attention_mask: batch_size x queries_len
         :param keys_attention_mask: batch_size x keys_len
         :return: batch_size x seq_len x d_model
         """
@@ -258,9 +277,9 @@ class MultiHeadAttention(nn.Module):
         #   h x 1 x seq_len x d_model x (d_k or d_v)
         # ) -> h x batch_size x seq_len x (d_k or d_v)
 
-        queries = torch.matmul(queries, self.queries_transform_w)
-        keys = torch.matmul(keys, self.keys_transform_w)
-        values = torch.matmul(values, self.values_transform_w)
+        queries = torch.matmul(queries, self.queries_transform)
+        keys = torch.matmul(keys, self.keys_transform)
+        values = torch.matmul(values, self.values_transform)
 
         # Calculate attention weights
 
@@ -270,7 +289,7 @@ class MultiHeadAttention(nn.Module):
         ) / math.sqrt(self.d_k)
 
         # Mask attention
-        self._mask_attention(attention_weights, queries_attention_mask, keys_attention_mask)
+        self._mask_attention(attention_weights, keys_attention_mask)
 
         attention_weights = torch.softmax(attention_weights, -1)
 
@@ -284,14 +303,13 @@ class MultiHeadAttention(nn.Module):
 
         return result
 
-    def _mask_attention(self, attention_weights, queries_attention_mask, keys_attention_mask):
+    def _mask_attention(self, attention_weights, keys_attention_mask):
         """
-        For all False values in attention_mask set corresponding values in attention to -inf.
-        If need to mask backwards connections set all attention values below diagonal to -inf.
+        For all False values in keys_attention_mask set corresponding values in attention to -inf.
+        If need to mask backwards connections set all attention values above diagonal to -inf.
 
         :param attention_weights: attention weights (before softmax) to update:
             h x batch_size x queries_len x keys_len
-        :param queries_attention_mask: boolean tensor indicating non-PAD tokens in queries: batch_size x queries_len
         :param keys_attention_mask: boolean tensor indicating non-PAD tokens in keys: batch_size x keys_len
         :return: None
         """
@@ -300,7 +318,7 @@ class MultiHeadAttention(nn.Module):
         batch_size = attention_weights.shape[1]
         queries_len = attention_weights.shape[2]
         keys_len = attention_weights.shape[3]
-        device = queries_attention_mask.device
+        device = keys_attention_mask.device
 
         set_to_minus_inf = torch.full(
             (1, batch_size, queries_len, keys_len),
@@ -309,21 +327,10 @@ class MultiHeadAttention(nn.Module):
             device=device,
         )
 
-        queries_attention_mask = ~(
-            queries_attention_mask
-            .view(batch_size, queries_len, 1)
-            .expand(batch_size, queries_len, keys_len)
-        )
-
         keys_attention_mask = ~(
             keys_attention_mask
             .view(batch_size, 1, keys_len)
             .expand(batch_size, queries_len, keys_len)
-        )
-
-        set_to_minus_inf = torch.logical_or(
-            set_to_minus_inf,
-            queries_attention_mask
         )
 
         set_to_minus_inf = torch.logical_or(

@@ -5,8 +5,6 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 from tokenizers.processors import TemplateProcessing
 from tokenizers.pre_tokenizers import WhitespaceSplit
-from tokenizers import normalizers
-from tokenizers.normalizers import NFD, StripAccents
 from tokenizers.decoders import BPEDecoder
 
 
@@ -15,7 +13,6 @@ from tokenizers.decoders import BPEDecoder
 @click.argument('input_files_paths', nargs=-1)
 def train_tokenizer(output_tokenizer_path, input_files_paths):
     tokenizer = Tokenizer(BPE(unk_token='[UNK]'))
-    tokenizer.normalizer = normalizers.Sequence([NFD(), StripAccents()])
     tokenizer.pre_tokenizer = WhitespaceSplit()
     tokenizer.post_processor = TemplateProcessing(
         single='[START] $A [END]',
