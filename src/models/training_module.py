@@ -1,9 +1,22 @@
 from typing import Any, Dict, List, Optional
+from itertools import chain
 
 import pytorch_lightning as pl
-from tokenizers import Tokenizer
+import torch
+import sacrebleu
 
+from tokenizers import Tokenizer
+from torch.utils.data import DataLoader
+
+from src.utils.search import beam_search_decode
+from src.utils.train import LRSchedulerNew, LRSchedulerVanilla
 from src.models.transformer import Transformer
+from src.features.dataset import (
+    FileIndex,
+    TranslationDatasetIndex,
+    IndexedPrebatchedTranslationDataset,
+    IndexedTranslationDataset,
+)
 
 
 class TranslatorModelTraining(pl.LightningModule):
@@ -11,67 +24,34 @@ class TranslatorModelTraining(pl.LightningModule):
             self,
             tokenizer: Tokenizer,
             config: Dict[str, Any],
-            source_train_path: Optional[str] = None,
-            target_train_path: Optional[str] = None,
-            source_val_path: Optional[str] = None,
-            target_val_path: Optional[str] = None,
+            train_source_index_path: Optional[str] = None,
+            train_target_index_path: Optional[str] = None,
+            val_source_index_path: Optional[str] = None,
+            val_target_index_path: Optional[str] = None,
     ):
         super().__init__()
 
         c = config['model']
         transformer = Transformer(
-            tokenizer.get_vocab_size(),
-            c['N'],
-            c['d_model'],
-            c['d_ff'],
-            c['h'],
-            c['d_k'],
-            c['d_v'],
-            c['p_drop'],
-            c['max_len'],
+            vocab_size=tokenizer.get_vocab_size(),
+            N=c['N'],
+            d_model=c['d_model'],
+            d_ff=c['d_ff'],
+            h=c['h'],
+            d_k=c['d_k'],
+            d_v=c['d_v'],
+            p_drop=c['p_drop'],
+            max_len=c['max_len'],
         )
         self.transformer = transformer
         self.tokenizer = tokenizer
         self.config = config
+        self.train_source_index_path = train_source_index_path
+        self.train_target_index_path = train_target_index_path
+        self.val_source_index_path = val_source_index_path
+        self.val_target_index_path = val_target_index_path
 
-        if source_train_path is not None:
-            train_index_path = os.path.join(
-                os.path.dirname(source_train_path),
-                'train.index'
-            )
-
-            val_index_path = os.path.join(
-                os.path.dirname(source_val_path),
-                'val.index'
-            )
-
-            if not os.path.exists(train_index_path):
-                train_dataset_index = TranslationDatasetIndex(
-                    source_train_path,
-                    target_train_path,
-                    tokenizer,
-                    max_length=config['dataset']['max_len'],
-                )
-                with open(train_index_path, 'wb') as f:
-                    pickle.dump(train_dataset_index, f)
-            else:
-                with open(train_index_path, 'rb') as f:
-                    train_dataset_index = pickle.load(f)
-
-            if not os.path.exists(val_index_path):
-                val_dataset_index = TranslationDatasetIndex(source_val_path, target_val_path, tokenizer)
-                with open(val_index_path, 'wb') as f:
-                    pickle.dump(val_dataset_index, f)
-            else:
-                with open(val_index_path, 'rb') as f:
-                    val_dataset_index = pickle.load(f)
-
-            self.train_dataset = IndexedPrebatchedTranslationDataset(
-                train_dataset_index,
-                mini_batch_size=config['dataset']['batch_size'],
-                maxi_batch_size=100,
-            )
-            self.val_dataset = IndexedTranslationDataset(val_dataset_index)
+        self._load_dataset_indexes()
 
         self.save_hyperparameters(ignore=[
             'source_train_path',
@@ -80,15 +60,36 @@ class TranslatorModelTraining(pl.LightningModule):
             'target_val_path'
         ])
 
-    def forward(self, source_token_ids, source_attention_masks, target_token_ids, target_attention_masks):
+    def _load_dataset_indexes(self):
+
+        if self.train_source_index_path is not None and self.train_target_index_path is not None:
+            train_index = TranslationDatasetIndex(
+                FileIndex.from_file(self.train_source_index_path),
+                FileIndex.from_file(self.train_target_index_path),
+            )
+            self.train_dataset = IndexedPrebatchedTranslationDataset(
+                dataset_index=train_index,
+                mini_batch_size=self.config['dataset']['batch_size'],
+                maxi_batch_size=self.config['dataset']['maxi_batch_size']
+            )
+
+        if self.val_source_index_path is not None and self.val_target_index_path is not None:
+            val_index = TranslationDatasetIndex(
+                FileIndex.from_file(self.val_source_index_path),
+                FileIndex.from_file(self.val_target_index_path),
+            )
+            self.val_dataset = IndexedTranslationDataset(val_index)
+
+    def forward(
+            self,
+            source_token_ids: torch.LongTensor,
+            source_attention_masks: torch.BoolTensor,
+            target_token_ids: torch.LongTensor,
+            target_attention_masks: torch.BoolTensor
+    ):
         return self.transformer(source_token_ids, source_attention_masks, target_token_ids, target_attention_masks)
 
-    def training_step(self, batch, batch_idx):
-        loss = self.calculate_batch_loss(batch)
-        self.log('train_loss', loss.detach().cpu())
-        return loss
-
-    def calculate_batch_loss(self, batch):
+    def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.FloatTensor:
         preds = self(
             batch['source_token_ids'],
             batch['source_attention_masks'],
@@ -97,11 +98,10 @@ class TranslatorModelTraining(pl.LightningModule):
         )
 
         loss = self.loss(preds, batch)
+        self.log('train_loss', loss.detach().cpu())
         return loss
 
-    def validation_step(self, batch, batch_idx):
-
-        c = self.config['beam_search']
+    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> Dict[str, Any]:
 
         preds = self(
             batch['source_token_ids'],
@@ -112,24 +112,7 @@ class TranslatorModelTraining(pl.LightningModule):
 
         loss = self.loss(preds, batch)
 
-        encoded_source = self.transformer.encoder_function(
-            batch['source_token_ids'],
-            batch['source_attention_masks']
-        )
-
-        max_decode_length = (
-                batch['source_token_ids'].size(1)
-                + c['max_len_factor']
-        )  # Max length = Input length + 50 (as in the paper)
-
-        decoded_token_ids = beam_search_decode(
-            model=self.transformer,
-            encoded_source=encoded_source,
-            source_attention_masks=batch['source_attention_masks'],
-            beam_size=c['beam_size'],  # As in the paper
-            max_len=max_decode_length,
-            alpha=c['alpha'],  # Length penalty as in the paper
-        )
+        decoded_token_ids = self.decode(batch['source_token_ids'], batch['source_attention_masks'])
 
         return {
             'val_loss': loss.detach().cpu(),
@@ -137,7 +120,7 @@ class TranslatorModelTraining(pl.LightningModule):
             'target_texts': batch['target_texts'],
         }
 
-    def validation_epoch_end(self, validation_batches):
+    def validation_epoch_end(self, validation_batches: List[Dict[str, Any]]):
         avg_val_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
 
         target_texts = list(chain(*[x['target_texts'] for x in validation_batches]))
@@ -151,10 +134,10 @@ class TranslatorModelTraining(pl.LightningModule):
         self.log('val_loss', avg_val_loss)
         self.log('hp_metric', val_bleu.score)
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: Dict[str, Any], batch_idx: int):
         return self.validation_step(batch, batch_idx)
 
-    def test_epoch_end(self, validation_batches):
+    def test_epoch_end(self, validation_batches: List[Dict[str, Any]]):
         avg_val_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
 
         target_texts = list(chain(*[x['target_texts'] for x in validation_batches]))
@@ -167,7 +150,7 @@ class TranslatorModelTraining(pl.LightningModule):
         print('BLEU:', val_bleu.score)
         print('Loss:', avg_val_loss)
 
-    def loss(self, preds, batch):
+    def loss(self, preds, batch) -> torch.FloatTensor:
         """
         :param preds: batch_size x input_seq_len x vocab_size
         :param batch: batch containing target_token_ids and attention_masks
@@ -210,30 +193,57 @@ class TranslatorModelTraining(pl.LightningModule):
             eps=co['eps'],
         )
 
-        # scheduler = {
-        #     'scheduler': LRSchedulerVanilla(optimizer, self.transformer.d_model, cs['warmup_steps']),
-        #     'interval': 'step',
-        #     'frequency': 1,
-        # }
-
-        scheduler = {
-            'scheduler': LRSchedulerNew(optimizer, co['learning_rate'], cs['warmup_steps']),
-            'interval': 'step',
-            'frequency': 1,
-        }
+        if cs['type'] == 'vanilla':
+            scheduler = {
+                'scheduler': LRSchedulerVanilla(optimizer, self.transformer.d_model, cs['warmup_steps']),
+                'interval': 'step',
+                'frequency': 1,
+            }
+        elif cs['type'] == 'new':
+            scheduler = {
+                'scheduler': LRSchedulerNew(optimizer, co['learning_rate'], cs['warmup_steps']),
+                'interval': 'step',
+                'frequency': 1,
+            }
+        else:
+            raise RuntimeError(f'Wrong config scheduler type "{cs["type"]}"')
 
         return [optimizer], [scheduler]
 
-    def train_dataloader(self):
-        return torch.utils.data.DataLoader(
+    def decode(self, source_token_ids: torch.LongTensor, source_attention_masks: torch.BoolTensor) -> List[List[int]]:
+
+        c = self.config['beam_search']
+        encoded_source = self.transformer.encoder_function(
+            source_token_ids,
+            source_attention_masks
+        )
+
+        max_decode_length = (
+                source_token_ids.size(1)
+                + c['max_len_factor']
+        )  # Max length = Input length + 50 (as in the paper)
+
+        decoded_token_ids = beam_search_decode(
+            model=self.transformer,
+            encoded_source=encoded_source,
+            source_attention_masks=source_attention_masks,
+            beam_size=c['beam_size'],  # As in the paper
+            max_len=max_decode_length,
+            alpha=c['alpha'],  # Length penalty as in the paper
+        )
+
+        return decoded_token_ids
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
             self.train_dataset,
             collate_fn=self.train_dataset.collate,
             num_workers=16,
             pin_memory=True,
         )
 
-    def val_dataloader(self):
-        return torch.utils.data.DataLoader(
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
             self.val_dataset,
             batch_size=8,
             collate_fn=self.val_dataset.collate,
