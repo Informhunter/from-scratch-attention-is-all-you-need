@@ -69,9 +69,11 @@ class FileIndex:
 
         with open(self.filepath, 'rb') as f:
             for line in f:
+                text = line.decode('utf-8').strip()
+                if len(text) == 0:
+                    continue
                 offsets.append(current_offset)
                 lengths.append(len(line))
-                text = line.decode('utf-8').strip()
                 line_token_counts.append(self._get_token_count(text))
                 current_offset += len(line)
 
