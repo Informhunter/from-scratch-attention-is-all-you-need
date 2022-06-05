@@ -10,42 +10,10 @@ import sacrebleu
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.trainers import BpeTrainer
-from tokenizers.processors import TemplateProcessing
-from tokenizers.pre_tokenizers import WhitespaceSplit
-from tokenizers import normalizers
-from tokenizers.normalizers import NFD, StripAccents
-from tokenizers.decoders import BPEDecoder
 
 from src.models.transformer import Transformer
 from src.utils.search import beam_search_decode
-from src.data.dataset import TranslationDataset, load_data_plaintext, load_data_sgm
-
-
-def train_tokenizer(training_set_iterator):
-
-    tokenizer = Tokenizer(BPE(unk_token='[UNK]'))
-    tokenizer.normalizer = normalizers.Sequence([NFD(), StripAccents()])
-    tokenizer.pre_tokenizer = WhitespaceSplit()
-    tokenizer.post_processor = TemplateProcessing(
-        single='[START] $A [END]',
-        special_tokens=[
-            ('[START]', 1),
-            ('[END]', 2),
-        ]
-    )
-    tokenizer.decoder = BPEDecoder(suffix='</w>')
-
-    trainer = BpeTrainer(
-        vocab_size=37000,
-        special_tokens=["[UNK]", "[START]", "[END]", "[PAD]"],
-        end_of_word_suffix='</w>'
-    )
-
-    tokenizer.train_from_iterator(training_set_iterator, trainer=trainer)
-
-    return tokenizer
+from src.features.dataset import PretokenizedTranslationDataset
 
 
 class TranslatorModel(pl.LightningModule):
@@ -149,27 +117,29 @@ class TranslatorModel(pl.LightningModule):
 
 
 @click.command()
-def main():
-    source_datafiles = ['./data/processed/train_en.tsv']
-    target_datafiles = ['./data/processed/train_de.tsv']
+@click.argument('tokenizer_path')
+@click.argument('source_train_path')
+@click.argument('target_train_path')
+@click.argument('source_dev_path')
+@click.argument('target_dev_path')
+def main(tokenizer_path, source_train_path, target_train_path, source_dev_path, target_dev_path):
 
-    source_datafiles_val = ['./data/processed/dev_en.tsv']
-    target_datafiles_val = ['./data/processed/dev_de.tsv']
+    # source_texts = load_data_plaintext([source_train_path])
+    # target_texts = load_data_plaintext([target_train_path])
 
-    source_texts = load_data_plaintext(source_datafiles)
-    target_texts = load_data_plaintext(target_datafiles)
+    # source_texts_val = load_data_plaintext([source_dev_path])
+    # target_texts_val = load_data_plaintext([target_dev_path])
 
-    source_texts_val = load_data_plaintext(source_datafiles_val)
-    target_texts_val = load_data_plaintext(target_datafiles_val)
+    # try:
+    #     tokenizer = Tokenizer.from_file('./models/tokenizer_en_de.json')
+    # except Exception:
+    #     tokenizer = train_tokenizer(chain(source_texts, target_texts))
+    #     tokenizer.save('./models/tokenizer_en_de.json')
 
-    try:
-        tokenizer = Tokenizer.from_file('./models/tokenizer_en_de.json')
-    except Exception:
-        tokenizer = train_tokenizer(chain(source_texts, target_texts))
-        tokenizer.save('./models/tokenizer_en_de.json')
+    tokenizer = Tokenizer.from_file(tokenizer_path)
 
-    train_dataset = TranslationDataset(source_texts, target_texts, tokenizer)
-    val_dataset = TranslationDataset(source_texts_val, target_texts_val, tokenizer)
+    train_dataset = PretokenizedTranslationDataset(source_train_path, target_train_path, tokenizer.token_to_id('[PAD]'))
+    val_dataset = PretokenizedTranslationDataset(source_dev_path, target_dev_path, tokenizer.token_to_id('[PAD]'))
 
     train_dataloader = t.utils.data.DataLoader(
         train_dataset, shuffle=True, batch_size=16, collate_fn=train_dataset.collate, num_workers=8
@@ -195,7 +165,7 @@ def main():
         logger=tb_logger,
         max_epochs=60,
         gpus=1,
-        precision=16,
+        # precision=16,
         # accumulate_grad_batches=256,
         val_check_interval=0.05,
         callbacks=[checkpoint_callback]

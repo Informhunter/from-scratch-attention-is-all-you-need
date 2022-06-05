@@ -25,7 +25,7 @@ class Transformer(nn.Module):
 
         self.input_embedding = nn.Embedding(vocab_size, d_model)
         self.output_embedding = nn.Embedding(vocab_size, d_model)
-        self.next_token_classifier = nn.Linear(d_model, vocab_size)
+        self.next_token_classifier = nn.Linear(d_model, vocab_size, bias=False)
         self.output_embedding.weight = self.input_embedding.weight
         self.next_token_classifier.weight = self.input_embedding.weight
 
@@ -37,6 +37,8 @@ class Transformer(nn.Module):
         :param output_attention_mask: batch_size x output_seq_len
         :return: next_token_logits: batch_size x output_seq_len x vocab_size
         """
+
+        import pdb; pdb.set_trace()
         encoded_input = self.encoder_function(input_sequence, input_attention_mask)
         next_token_logits = self.decoder_function(
             encoded_input, input_attention_mask,
@@ -46,14 +48,14 @@ class Transformer(nn.Module):
         return next_token_logits
 
     def encoder_function(self, input_sequence, input_attention_mask):
-        encoded_input_sequence = self.input_embedding(input_sequence)
+        encoded_input_sequence = self.input_embedding(input_sequence) * math.sqrt(self.d_model)
         encoded_input_sequence = self.positional_encoding(encoded_input_sequence)
         encoded_input_sequence = self.dropout(encoded_input_sequence)
         encoded_input_sequence = self.encoder(encoded_input_sequence, input_attention_mask)
         return encoded_input_sequence
 
     def decoder_function(self, encoded_input_sequence, input_attention_mask, output_sequence, output_attention_mask):
-        encoded_output_sequence = self.output_embedding(output_sequence)
+        encoded_output_sequence = self.output_embedding(output_sequence) * math.sqrt(self.d_model)
         encoded_output_sequence = self.positional_encoding(encoded_output_sequence)
         encoded_output_sequence = self.dropout(encoded_output_sequence)
         encoded_output_sequence = self.decoder(

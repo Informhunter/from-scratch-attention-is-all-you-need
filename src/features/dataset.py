@@ -1,3 +1,7 @@
+from ast import literal_eval
+
+import numpy as np
+import pandas as pd
 import torch as t
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
@@ -22,6 +26,88 @@ def load_data_sgm(datafiles):
                 end_idx = line.find('</seg>')
                 texts.append(line[start_idx:end_idx])
     return texts
+
+
+class PretokenizedTranslationDataset(Dataset):
+    def __init__(self, source_file_path, target_file_path, pad_token_id, max_length=512):
+        self.max_length = max_length
+        self.pad_token_id = pad_token_id
+
+        pretokenized_sources = pd.read_csv(source_file_path, sep='\t', lineterminator='\n')
+        pretokenized_targets = pd.read_csv(target_file_path, sep='\t', lineterminator='\n')
+
+        pretokenized_sources['token_ids'] = pretokenized_sources['token_ids'].apply(
+            lambda x: [int(y) for y in x.split(',')]
+        )
+        pretokenized_targets['token_ids'] = pretokenized_targets['token_ids'].apply(
+            lambda x: [int(y) for y in x.split(',')]
+        )
+
+        not_too_long_sources = pretokenized_sources['token_ids'].str.len() <= max_length
+        not_too_long_targets = pretokenized_targets['token_ids'].str.len() <= max_length
+
+        not_too_long = np.logical_and(not_too_long_sources, not_too_long_targets)
+
+        pretokenized_sources = pretokenized_sources[not_too_long]
+        pretokenized_targets = pretokenized_targets[not_too_long]
+
+        source_texts = pretokenized_sources['text'].values
+        target_texts = pretokenized_targets['text'].values
+
+        encoded_sources = pretokenized_sources['token_ids'].values
+        encoded_targets = pretokenized_targets['token_ids'].values
+
+        source_attention_masks = [[True] * len(x) for x in encoded_sources]
+        target_attention_masks = [[True] * len(x) for x in encoded_targets]
+
+        self.source_texts = source_texts
+        self.target_texts = target_texts
+
+        self.encoded_sources = encoded_sources
+        self.encoded_targets = encoded_targets
+
+        self.source_attention_masks = source_attention_masks
+        self.target_attention_masks = target_attention_masks
+
+    def __len__(self):
+        return len(self.source_texts)
+
+    def __getitem__(self, index):
+        source_token_ids = t.LongTensor(self.encoded_sources[index])
+        source_attention_mask = t.BoolTensor(self.source_attention_masks[index])
+        target_token_ids = t.LongTensor(self.encoded_targets[index])
+        target_attention_mask = t.BoolTensor(self.target_attention_masks[index])
+        source_text = self.source_texts[index]
+        target_text = self.target_texts[index]
+
+        return {
+            'source_token_ids': source_token_ids,
+            'source_attention_mask': source_attention_mask,
+            'target_token_ids': target_token_ids,
+            'target_attention_mask': target_attention_mask,
+            'source_text': source_text,
+            'target_text': target_text,
+        }
+
+    def collate(self, batch):
+        return {
+            'source_token_ids': pad_sequence(
+                [x['source_token_ids'] for x in batch], True, self.pad_token_id
+            ),
+            'source_attention_masks': pad_sequence(
+                [x['source_attention_mask'] for x in batch], True, False
+            ),
+            'source_texts': [x['source_text'] for x in batch],
+
+            'target_token_ids': pad_sequence(
+                [x['target_token_ids'] for x in batch], True, self.pad_token_id
+            ),
+            'target_attention_masks': pad_sequence(
+                [x['target_attention_mask'] for x in batch], True, False
+            ),
+            'target_texts': [x['target_text'] for x in batch],
+        }
+
 
 
 class TranslationDataset(Dataset):
