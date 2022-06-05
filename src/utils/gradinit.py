@@ -1,6 +1,8 @@
 import copy
 from typing import Any, Callable, Dict, List
 from enum import Enum
+from tqdm import tqdm
+
 
 import torch
 import torch.nn as nn
@@ -45,6 +47,7 @@ class GradInit:
             target_opt_params: Dict[str, Any],
     ):
         self.original_getattrs = {}
+        self.getattr_patches = {}
         self.state_backup = None
 
         self.n_steps = n_steps
@@ -65,20 +68,19 @@ class GradInit:
         self.monkeypatch_module_(module)
 
         data_iter = iter(dataloader)
-        gradinit_opt = torch.optim.SGD(module.parameters(), lr=self.gradinit_lr)
+        gradinit_opt = torch.optim.Adam(module.parameters(), lr=self.gradinit_lr)
 
         if self.target_opt_type == OptType.ADAM:
             gradient_norm_fn = self.gradient_norm_adam
-            target_opt = torch.optim.Adam(module.parameters(), **self.target_opt_params)
-
+            target_opt_class = torch.optim.Adam
         elif self.target_opt_type == OptType.SGD:
             gradient_norm_fn = self.gradient_norm_sgd
-            target_opt = torch.optim.SGD(module.parameters(), **self.target_opt_params)
+            target_opt_class = torch.optim.SGD
         else:
             raise NotImplementedError('Only support Adam and SGD currently')
 
         # Optimize scaling factors
-        for i in range(self.n_steps):
+        for _ in tqdm(range(self.n_steps)):
             batch_1 = next(data_iter)
 
             # now calculating gradient with respect to model parameters
@@ -90,6 +92,8 @@ class GradInit:
             gradients = [param.grad for param in module.parameters() if param.requires_grad]
 
             gradient_norm = gradient_norm_fn(gradients)
+
+            target_opt = target_opt_class(module.parameters(), **self.target_opt_params)
 
             if gradient_norm > self.gradinit_gamma:
                 # Calculate gradient with respect to scale factors and update them
@@ -119,6 +123,7 @@ class GradInit:
 
         # Scale weights by scaling factors
         self.scale_weights_(module)
+        self.set_non_scale_requires_grad_(module=module, requires_grad=True)
 
         self.cleanup_module_(module)
 
@@ -127,22 +132,33 @@ class GradInit:
         self.patch_getattr_(module)
 
     def cleanup_module_(self, module: nn.Module):
+        self.set_non_scale_requires_grad_(module, True)
         self.unpatch_getattr_(module)
         self.remove_scale_parameters_(module)
 
     def init_scale_parameters_(self, module: nn.Module):
         for name, param in list(module._parameters.items()):
-            setattr(module, name + '__scale', nn.Parameter(torch.FloatTensor([1.])))
+            if param is not None and param.requires_grad:
+                setattr(module, name + '__scale', nn.Parameter(param.new([1.])))
+                # setattr(module, name + '__scale', nn.Parameter(torch.FloatTensor([1.])))
         for name, submodule in list(module._modules.items()):
             self.init_scale_parameters_(submodule)
 
     def patch_getattr_(self, module: nn.Module):
-        module_type = type(module)
-        if module_type in self.original_getattrs:
-            return
-        self.original_getattrs[module_type] = module_type.__getattr__
-        module_type.__getattr__ = self.getattr_patch
+        old_getattr = type(module).__getattr__
+        self.original_getattrs[type(module)] = old_getattr
 
+        def getattr_patch(self, key):
+            result = old_getattr(self, key)
+            if isinstance(result, nn.Parameter):
+                try:
+                    scale_factor = old_getattr(self, key + '__scale')
+                    return result * scale_factor
+                except AttributeError:
+                    pass
+            return result
+
+        type(module).__getattr__ = getattr_patch
         for name, submodule in list(module._modules.items()):
             self.patch_getattr_(submodule)
 
@@ -152,14 +168,6 @@ class GradInit:
             return self.original_getattrs[module_type](obj, key)
         else:
             return getattr(obj, key)
-
-    def getattr_patch(self, obj, key: str):
-        result = self.safe_getattr(obj, key)
-        if isinstance(result, nn.Parameter):
-            scale_factor = self.safe_getattr(obj, key + '__scale')
-            return result * scale_factor
-        else:
-            return result
 
     def unpatch_getattr_(self, module: nn.Module):
         module_type = type(module)
@@ -181,8 +189,10 @@ class GradInit:
                 param.requires_grad = requires_grad
 
     def set_non_scale_requires_grad_(self, module: nn.Module, requires_grad: bool):
-        for name, param in list(module.named_parameters()):
-            if not name.endswith('__scale'):
+        named_parameters = list(module.named_parameters())
+        names = {name for name, _ in named_parameters}
+        for name, param in named_parameters:
+            if not name.endswith('__scale') and (name + '__scale') in names:
                 param.requires_grad = requires_grad
 
     def backup_state(self, module: nn.Module):
@@ -197,7 +207,10 @@ class GradInit:
         with torch.no_grad():
             for name, param in list(module._parameters.items()):
                 if not name.endswith('__scale'):
-                    scale_param = self.safe_getattr(name + '__scale')
+                    try:
+                        scale_param = self.safe_getattr(module, name + '__scale')
+                    except AttributeError:
+                        continue
                     param.copy_(param * scale_param)
         for name, submodule in list(module._modules.items()):
             self.scale_weights_(submodule)
@@ -222,26 +235,47 @@ class GradInit:
         return torch.linalg.vector_norm(concatenated_gradients, 2.)
 
 
+def create_getattr_patch(model):
+    old_getattr = type(model).__getattr__
+
+    def getattr_patch(self, key):
+        result = old_getattr(self, key)
+        if isinstance(result, nn.Parameter):
+            scale_factor = old_getattr(self, key + '__scale')
+            return result * scale_factor
+        else:
+            return result
+
+    return getattr_patch
+
+
+def patch_getattr(model: nn.Module):
+    type(model).__getattr__ = create_getattr_patch(model)
+    for name, submodule in list(model._modules.items()):
+        patch_getattr(submodule)
+
+
 def main():
     model = ModelBig()
-    g = GradInit()
+    g = GradInit(
+        n_steps=500,
+        gradinit_gamma=0.1 / 1e-3,
+        gradinit_alpha=0.01,
+        gradinit_lr=1e-3,
+        target_opt_type=OptType.ADAM,
+        target_opt_params={'lr': 1e-3},
+    )
     g.init_scale_parameters_(model)
+    print(model.param)
+    print(getattr(model, 'param'))
+    g.patch_getattr_(model)
+    # patch_getattr(model)
+    print(model.param)
+    print(getattr(model, 'param'))
 
-    g.backup_state(model)
-
-    with torch.no_grad():
-        model.param__scale.copy_(torch.FloatTensor([55.]))
-
-    with torch.no_grad():
-        model.param.copy_(torch.FloatTensor([77.]))
-
-    print('param before recovery:', model.param)
-    print('param__scale before recovery:', model.param__scale)
-
-    g.recover_state_(model)
-
-    print('param after recovery:', model.param)
-    print('param__scale after recovery:', model.param__scale)
+    g.unpatch_getattr_(model)
+    print(model.param)
+    print(getattr(model, 'param'))
 
     pass
 
