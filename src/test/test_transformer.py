@@ -6,7 +6,7 @@ from src.models.transformer import Transformer
 class TestTransformer(unittest.TestCase):
     def test_forward_shapes(self):
         with torch.no_grad():
-            model = Transformer(37000, 6, 512, 2048, 8, 64, 64, 0.1)
+            model = Transformer(37000, 6, 512, 2048, 8, 64, 64, 0.1, 512)
             input_sequence = torch.LongTensor([
                 [1, 2, 3, 0, 0],
                 [4, 5, 6, 7, 8],
