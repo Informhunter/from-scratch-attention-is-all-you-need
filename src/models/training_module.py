@@ -64,19 +64,21 @@ class TranslatorModelTraining(pl.LightningModule):
 
         if self.train_source_index_path is not None and self.train_target_index_path is not None:
             train_index = TranslationDatasetIndex(
-                FileIndex.from_file(self.train_source_index_path),
-                FileIndex.from_file(self.train_target_index_path),
+                source_index=FileIndex.from_file(self.train_source_index_path),
+                target_index=FileIndex.from_file(self.train_target_index_path),
+                max_length=self.config['dataset']['max_len'],
             )
             self.train_dataset = IndexedPrebatchedTranslationDataset(
                 dataset_index=train_index,
                 mini_batch_size=self.config['dataset']['batch_size'],
-                maxi_batch_size=self.config['dataset']['maxi_batch_size']
+                maxi_batch_size=self.config['dataset']['maxi_batch_size'],
             )
 
         if self.val_source_index_path is not None and self.val_target_index_path is not None:
             val_index = TranslationDatasetIndex(
                 FileIndex.from_file(self.val_source_index_path),
                 FileIndex.from_file(self.val_target_index_path),
+                max_length=512,
             )
             self.val_dataset = IndexedTranslationDataset(val_index)
 
@@ -248,5 +250,5 @@ class TranslatorModelTraining(pl.LightningModule):
             self.val_dataset,
             batch_size=8,
             collate_fn=self.val_dataset.collate,
-            num_workers=16
+            num_workers=16,
         )

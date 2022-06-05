@@ -1,3 +1,5 @@
+from typing import List
+
 import click
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -8,9 +10,9 @@ from tokenizers.decoders import BPEDecoder
 
 
 @click.command()
-@click.argument('output_tokenizer_path')
 @click.argument('input_files_paths', nargs=-1)
-def main(output_tokenizer_path, input_files_paths):
+@click.argument('output_tokenizer_path', nargs=1)
+def main(input_files_paths: List[str], output_tokenizer_path: str):
     tokenizer = Tokenizer(BPE(unk_token='[UNK]'))
     tokenizer.pre_tokenizer = WhitespaceSplit()
     tokenizer.post_processor = TemplateProcessing(
@@ -25,7 +27,7 @@ def main(output_tokenizer_path, input_files_paths):
     trainer = BpeTrainer(
         vocab_size=37000,
         special_tokens=["[UNK]", "[START]", "[END]", "[PAD]"],
-        end_of_word_suffix='</w>'
+        end_of_word_suffix='</w>',
     )
 
     tokenizer.train(input_files_paths, trainer=trainer)
