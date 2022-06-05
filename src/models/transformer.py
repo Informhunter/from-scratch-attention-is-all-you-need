@@ -5,7 +5,18 @@ from torch import nn
 
 class Transformer(nn.Module):
 
-    def __init__(self, vocab_size, N, d_model, d_ff, h, d_k, d_v, p_drop, max_len):
+    def __init__(
+            self,
+            vocab_size: int,
+            N: int,
+            d_model: int,
+            d_ff: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            p_drop: float,
+            max_len: int,
+    ):
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -25,14 +36,34 @@ class Transformer(nn.Module):
         self.positional_encoding = PositionalEncoding(d_model, max_len)
 
         # Input embedding, output embedding and next_token_classifier share same weights
-        self.input_embedding = nn.Embedding(vocab_size, d_model)
-        self.output_embedding = nn.Embedding(vocab_size, d_model)
-        self.next_token_classifier = nn.Linear(d_model, vocab_size, bias=False)
-        self.output_embedding.weight = self.input_embedding.weight
-        self.next_token_classifier.weight = self.input_embedding.weight
+        self.input_embedding = nn.Embedding(
+            num_embeddings=vocab_size,
+            embedding_dim=d_model,
+        )
 
-    def forward(self, input_sequence: torch.LongTensor, input_attention_mask: torch.BoolTensor,
-                      output_sequence: torch.LongTensor, output_attention_mask: torch.BoolTensor):
+        output_embedding = nn.Embedding(
+            num_embeddings=vocab_size,
+            embedding_dim=d_model,
+        )
+
+        next_token_classifier = nn.Linear(
+            in_features=d_model,
+            out_features=vocab_size,
+            bias=False,
+        )
+        output_embedding.weight = self.input_embedding.weight
+        next_token_classifier.weight = self.input_embedding.weight
+
+        self.output_embedding = output_embedding
+        self.next_token_classifier = next_token_classifier
+
+    def forward(
+            self,
+            input_sequence: torch.LongTensor,
+            input_attention_mask: torch.BoolTensor,
+            output_sequence: torch.LongTensor,
+            output_attention_mask: torch.BoolTensor,
+    ) -> torch.FloatTensor:
         """
         :param input_sequence: batch_size x input_seq_len - token ids for input sequences
         :param input_attention_mask: batch_size x input_seq_len - attention masks for input sequences
@@ -52,7 +83,7 @@ class Transformer(nn.Module):
 
         return next_token_logits
 
-    def encoder_function(self, input_sequence, input_attention_mask):
+    def encoder_function(self, input_sequence: torch.LongTensor, input_attention_mask: torch.BoolTensor):
         """
         Encode input sequences into vector representations. Each position in input sequences gets a corresponding
         vector of size d_model.
@@ -67,7 +98,13 @@ class Transformer(nn.Module):
         encoded_input_sequence = self.encoder(encoded_input_sequence, input_attention_mask)
         return encoded_input_sequence
 
-    def decoder_function(self, encoded_input_sequence, input_attention_mask, output_sequence, output_attention_mask):
+    def decoder_function(
+            self,
+            encoded_input_sequence: torch.LongTensor,
+            input_attention_mask: torch.BoolTensor,
+            output_sequence: torch.LongTensor,
+            output_attention_mask: torch.BoolTensor,
+    ) -> torch.FloatTensor:
         """
         Based on encoded input sequences and output sequences predict next tokens for each position in input sequences.
         :param encoded_input_sequence: batch_size x input_seq_len x d_model
@@ -80,8 +117,10 @@ class Transformer(nn.Module):
         encoded_output_sequence = self.positional_encoding(encoded_output_sequence)
         encoded_output_sequence = self.dropout(encoded_output_sequence)
         encoded_output_sequence = self.decoder(
-            encoded_input_sequence, input_attention_mask,
-            encoded_output_sequence, output_attention_mask
+            input_sequence_encoding=encoded_input_sequence,
+            input_attention_mask=input_attention_mask,
+            output_sequence_encoding=encoded_output_sequence,
+            output_attention_mask=output_attention_mask,
         )
         # Scale logits by d_model ** -0.5
         next_token_logits = self.next_token_classifier(encoded_output_sequence) / math.sqrt(self.d_model)
@@ -89,7 +128,16 @@ class Transformer(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, N, d_model, d_ff, h, d_k, d_v, p_drop):
+    def __init__(
+            self,
+            N: int,
+            d_model: int,
+            d_ff: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            p_drop: float,
+    ):
         super().__init__()
 
         self.N = N
@@ -113,14 +161,25 @@ class TransformerEncoder(nn.Module):
         """
 
         for encoder_layer in self.encoder_layers:
-            encoded_input_sequence = encoder_layer(encoded_input_sequence, input_attention_mask)
+            encoded_input_sequence = encoder_layer(
+                encoded_input=encoded_input_sequence,
+                attention_mask=input_attention_mask,
+            )
 
         return encoded_input_sequence
 
 
 class TransformerEncoderLayer(nn.Module):
 
-    def __init__(self, d_model, d_ff, h, d_k, d_v, p_drop):
+    def __init__(
+            self,
+            d_model: int,
+            d_ff: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            p_drop: float,
+    ):
         super().__init__()
 
         self.d_model = d_model
@@ -136,7 +195,7 @@ class TransformerEncoderLayer(nn.Module):
         self.layer_norm_2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(p=p_drop)
 
-    def forward(self, encoded_input, attention_mask):
+    def forward(self, encoded_input: torch.FloatTensor, attention_mask: torch.BoolTensor) -> torch.FloatTensor:
         """
         :param encoded_input: batch_size x input_seq_len x d_model
         :param attention_mask: batch_size x input_seq_len
@@ -164,7 +223,16 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, N, d_model, d_ff, h, d_k, d_v, p_drop):
+    def __init__(
+            self,
+            N: int,
+            d_model: int,
+            d_ff: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            p_drop: float
+    ):
         super().__init__()
 
         self.N = N
@@ -177,10 +245,16 @@ class TransformerDecoder(nn.Module):
 
         self.decoder_layers = nn.ModuleList([
             TransformerDecoderLayer(d_model, d_ff, h, d_k, d_v, p_drop)
-            for i in range(N)
+            for _ in range(N)
         ])
 
-    def forward(self, input_sequence_encoding, input_attention_mask, output_sequence_encoding, output_attention_mask):
+    def forward(
+            self,
+            input_sequence_encoding: torch.FloatTensor,
+            input_attention_mask: torch.BoolTensor,
+            output_sequence_encoding: torch.FloatTensor,
+            output_attention_mask: torch.BoolTensor,
+    ) -> torch.FloatTensor:
         for decoder_layer in self.decoder_layers:
             output_sequence_encoding = decoder_layer(
                 input_sequence_encoding, input_attention_mask, output_sequence_encoding, output_attention_mask
@@ -189,7 +263,15 @@ class TransformerDecoder(nn.Module):
 
 
 class TransformerDecoderLayer(nn.Module):
-    def __init__(self, d_model, d_ff, h, d_k, d_v, p_drop):
+    def __init__(
+            self,
+            d_model: int,
+            d_ff: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            p_drop: float
+    ):
         super().__init__()
 
         self.d_model = d_model
@@ -207,14 +289,20 @@ class TransformerDecoderLayer(nn.Module):
         self.layer_norm_3 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(p=p_drop)
 
-    def forward(self, input_sequence_encoding, input_attention_mask, output_sequence_encoding, output_attention_mask):
+    def forward(
+            self,
+            input_sequence_encoding: torch.FloatTensor,
+            input_attention_mask: torch.BoolTensor,
+            output_sequence_encoding: torch.FloatTensor,
+            output_attention_mask: torch.BoolTensor,
+    ) -> torch.FloatTensor:
 
         # Apply self-attention
         self_attention = self.multi_head_attention_1(
-            output_sequence_encoding,
-            output_sequence_encoding,
-            output_sequence_encoding,
-            output_attention_mask,
+            queries=output_sequence_encoding,
+            keys=output_sequence_encoding,
+            values=output_sequence_encoding,
+            keys_attention_mask=output_attention_mask,
         )
 
         self_attention = self.dropout(self_attention)
@@ -222,10 +310,10 @@ class TransformerDecoderLayer(nn.Module):
 
         # Apply cross-attention over encoder output
         cross_attention = self.multi_head_attention_2(
-            output_sequence_encoding,
-            input_sequence_encoding,
-            input_sequence_encoding,
-            input_attention_mask,
+            queries=output_sequence_encoding,
+            keys=input_sequence_encoding,
+            values=input_sequence_encoding,
+            keys_attention_mask=input_attention_mask,
         )
         cross_attention = self.dropout(cross_attention)
         output_sequence_encoding = self.layer_norm_2(output_sequence_encoding + cross_attention)
@@ -239,7 +327,14 @@ class TransformerDecoderLayer(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, h, d_k, d_v, mask_back_connections):
+    def __init__(
+            self,
+            d_model: int,
+            h: int,
+            d_k: int,
+            d_v: int,
+            mask_back_connections: bool
+    ):
         super().__init__()
         self.h = h
         self.d_model = d_model
@@ -258,7 +353,13 @@ class MultiHeadAttention(nn.Module):
         self.output_transform = nn.Parameter(torch.empty(h * d_v, d_model))
         nn.init.xavier_uniform_(self.output_transform)
 
-    def forward(self, queries, keys, values, keys_attention_mask):
+    def forward(
+            self,
+            queries: torch.FloatTensor,
+            keys: torch.FloatTensor,
+            values: torch.FloatTensor,
+            keys_attention_mask: torch.BoolTensor,
+    ) -> torch.FloatTensor:
         """
         :param queries: batch_size x queries_len x d_model
         :param keys: batch_size x keys_len x d_model
@@ -303,7 +404,11 @@ class MultiHeadAttention(nn.Module):
 
         return result
 
-    def _mask_attention(self, attention_weights, keys_attention_mask):
+    def _mask_attention(
+            self,
+            attention_weights: torch.FloatTensor,
+            keys_attention_mask: torch.BoolTensor,
+    ) -> None:
         """
         For all False values in keys_attention_mask set corresponding values in attention to -inf.
         If need to mask backwards connections set all attention values above diagonal to -inf.
@@ -335,7 +440,7 @@ class MultiHeadAttention(nn.Module):
 
         set_to_minus_inf = torch.logical_or(
             set_to_minus_inf,
-            keys_attention_mask
+            keys_attention_mask,
         )
 
         if self.mask_back_connections:
@@ -348,14 +453,14 @@ class MultiHeadAttention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, d_model, d_ff):
+    def __init__(self, d_model: int, d_ff: int):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
         self.linear_1 = nn.Linear(d_model, d_ff)
         self.linear_2 = nn.Linear(d_ff, d_model)
 
-    def forward(self, x):
+    def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         x = self.linear_1(x)
         x = torch.relu(x)
         x = self.linear_2(x)
@@ -364,7 +469,7 @@ class FeedForward(nn.Module):
 
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model, max_len):
+    def __init__(self, d_model: int, max_len: int):
         super().__init__()
         self.positional_encodings = nn.Parameter(
             torch.FloatTensor(max_len, d_model),
@@ -378,9 +483,9 @@ class PositionalEncoding(nn.Module):
                 else:
                     self.positional_encodings[pos][i] = math.cos(pos / 10000 ** (2 * i / d_model))
 
-    def forward(self, encoded_sequence):
-        batch_size = encoded_sequence.shape[0]
-        sequence_length = encoded_sequence.shape[1]
+    def forward(self, embedded_sequence: torch.FloatTensor) -> torch.FloatTensor:
+        batch_size = embedded_sequence.shape[0]
+        sequence_length = embedded_sequence.shape[1]
         positional_encoding = self.positional_encodings[:sequence_length, :]
         positional_encoding = positional_encoding.unsqueeze(0).repeat(batch_size, 1, 1)
-        return encoded_sequence + positional_encoding
+        return embedded_sequence + positional_encoding

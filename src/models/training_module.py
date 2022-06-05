@@ -9,7 +9,10 @@ from tokenizers import Tokenizer
 from torch.utils.data import DataLoader
 
 from src.utils.search import beam_search_decode
-from src.utils.train import LRSchedulerNew, LRSchedulerVanilla
+from src.utils.train import (
+    LRSchedulerNew,
+    LRSchedulerVanilla,
+)
 from src.models.transformer import Transformer
 from src.features.dataset import (
     FileIndex,
@@ -57,10 +60,10 @@ class TranslatorModelTraining(pl.LightningModule):
             'source_train_path',
             'target_train_path',
             'source_val_path',
-            'target_val_path'
+            'target_val_path',
         ])
 
-    def _load_dataset_indexes(self):
+    def _load_dataset_indexes(self) -> None:
 
         if self.train_source_index_path is not None and self.train_target_index_path is not None:
             train_index = TranslationDatasetIndex(
@@ -87,16 +90,21 @@ class TranslatorModelTraining(pl.LightningModule):
             source_token_ids: torch.LongTensor,
             source_attention_masks: torch.BoolTensor,
             target_token_ids: torch.LongTensor,
-            target_attention_masks: torch.BoolTensor
-    ):
-        return self.transformer(source_token_ids, source_attention_masks, target_token_ids, target_attention_masks)
+            target_attention_masks: torch.BoolTensor,
+    ) -> torch.FloatTensor:
+        return self.transformer(
+            source_token_ids=source_token_ids,
+            source_attention_masks=source_attention_masks,
+            target_token_ids=target_token_ids,
+            target_attention_masks=target_attention_masks,
+        )
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.FloatTensor:
         preds = self(
             batch['source_token_ids'],
             batch['source_attention_masks'],
             batch['target_token_ids'],
-            batch['target_attention_masks']
+            batch['target_attention_masks'],
         )
 
         loss = self.loss(preds, batch)
@@ -122,7 +130,7 @@ class TranslatorModelTraining(pl.LightningModule):
             'target_texts': batch['target_texts'],
         }
 
-    def validation_epoch_end(self, validation_batches: List[Dict[str, Any]]):
+    def validation_epoch_end(self, validation_batches: List[Dict[str, Any]]) -> None:
         avg_val_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
 
         target_texts = list(chain(*[x['target_texts'] for x in validation_batches]))
@@ -136,10 +144,10 @@ class TranslatorModelTraining(pl.LightningModule):
         self.log('val_loss', avg_val_loss)
         self.log('hp_metric', val_bleu.score)
 
-    def test_step(self, batch: Dict[str, Any], batch_idx: int):
+    def test_step(self, batch: Dict[str, Any], batch_idx: int) -> Dict[str, Any]:
         return self.validation_step(batch, batch_idx)
 
-    def test_epoch_end(self, validation_batches: List[Dict[str, Any]]):
+    def test_epoch_end(self, validation_batches: List[Dict[str, Any]]) -> None:
         test_avg_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
 
         target_texts = list(chain(*[x['target_texts'] for x in validation_batches]))
@@ -153,7 +161,7 @@ class TranslatorModelTraining(pl.LightningModule):
             'test_avg_loss':  test_avg_loss,
         })
 
-    def loss(self, preds, batch) -> torch.FloatTensor:
+    def loss(self, preds: torch.FloatTensor, batch: Dict[str, Any]) -> torch.FloatTensor:
         """
         :param preds: batch_size x input_seq_len x vocab_size
         :param batch: batch containing target_token_ids and attention_masks
@@ -218,7 +226,7 @@ class TranslatorModelTraining(pl.LightningModule):
         c = self.config['beam_search']
         encoded_source = self.transformer.encoder_function(
             source_token_ids,
-            source_attention_masks
+            source_attention_masks,
         )
 
         max_decode_length = (
