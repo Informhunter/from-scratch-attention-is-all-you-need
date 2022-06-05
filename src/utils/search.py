@@ -2,10 +2,20 @@
 Majorly inspired by https://github.com/joeynmt/joeynmt/blob/master/joeynmt/search.py
 '''
 
+from typing import List, Optional
+
+import torch
 import torch as t
 
 
-def beam_search_decode(model, encoded_source, source_attention_masks, beam_size=5, max_len=120, alpha=-1):
+def beam_search_decode(
+        model,
+        encoded_source: torch.LongTensor,
+        source_attention_masks: torch.BoolTensor,
+        beam_size: int = 5,
+        max_len: int = 120,
+        alpha: Optional[float] = None,
+) -> List[List[int]]:
 
     device = encoded_source.device
 
@@ -71,7 +81,7 @@ def beam_search_decode(model, encoded_source, source_attention_masks, beam_size=
 
         new_hypotheses_scores = new_hypotheses_scores.reshape(current_batch_size, beam_size * vocab_size)
 
-        if alpha > -1:
+        if alpha is not None:
             length_penalty = ((5.0 + (step + 1)) / 6.0) ** alpha
             new_hypotheses_scores /= length_penalty
 
@@ -81,7 +91,7 @@ def beam_search_decode(model, encoded_source, source_attention_masks, beam_size=
             beam_size, dim=-1
         )
 
-        if alpha > -1:
+        if alpha is not None:
             hypotheses_log_probas = top_hypotheses_scores_per_beam * length_penalty
         else:
             hypotheses_log_probas = top_hypotheses_scores_per_beam

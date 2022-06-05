@@ -2,10 +2,10 @@ import pickle
 import logging
 import random
 from itertools import islice
-from typing import Tuple, List
+from typing import Tuple
 
 import torch.utils.data
-from torch.utils.data import Dataset, IterableDataset
+from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 
 import tokenizers
