@@ -1,4 +1,7 @@
-.PHONY: download-data extract-data train-tokenizer index-data
+.PHONY: download-data extract-data train-tokenizer index-data clean test
+
+SHELL := /bin/bash
+.SHELLFLAGS := -O extglob -c
 
 PYTHON = python3
 TOKENIZER_PATH = models/tokenizer_en_de_no_norm.json
@@ -19,5 +22,12 @@ train-tokenizer:
 
 
 index-data:
-	$(PYTHON) src/features/index_data.py data/processed/*.en $(TOKENIZER_PATH)
-	$(PYTHON) src/features/index_data.py data/processed/*.de $(TOKENIZER_PATH)
+	$(PYTHON) src/features/index_data.py data/processed/*.!("index") $(TOKENIZER_PATH)
+
+
+clean:
+	rm data/processed/!(".gitignore")
+
+
+test:
+	$(PYTHON) -m unittest
