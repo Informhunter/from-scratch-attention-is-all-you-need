@@ -47,10 +47,10 @@ def _init_output_dir(output_dir: str) -> Tuple[Path, Path, Path]:
 
 @click.command()
 @click.argument('tokenizer_path')
-@click.argument('source_train_path')
-@click.argument('target_train_path')
-@click.argument('source_val_path')
-@click.argument('target_val_path')
+@click.argument('train_source_index_path')
+@click.argument('train_target_index_path')
+@click.argument('val_source_index_path')
+@click.argument('val_target_index_path')
 @click.argument('output_dir')
 @click.option('--from-checkpoint', default=None)
 @click.option('--config-path', default='config_base.json')
@@ -60,10 +60,10 @@ def _init_output_dir(output_dir: str) -> Tuple[Path, Path, Path]:
 @click.option('--early-stopping', is_flag=True)
 def train(
         tokenizer_path: str,
-        source_train_path: str,
-        target_train_path: str,
-        source_val_path: str,
-        target_val_path: str,
+        train_source_index_path: str,
+        train_target_index_path: str,
+        val_source_index_path: str,
+        val_target_index_path: str,
         output_dir: str,
         from_checkpoint: Optional[str],
         config_path: str,
@@ -85,10 +85,10 @@ def train(
     model_training = TranslatorModelTraining(
         tokenizer=tokenizer,
         config=config,
-        source_train_path=source_train_path,
-        target_train_path=target_train_path,
-        source_val_path=source_val_path,
-        target_val_path=target_val_path,
+        train_source_index_path=train_source_index_path,
+        train_target_index_path=train_target_index_path,
+        val_source_index_path=val_source_index_path,
+        val_target_index_path=val_target_index_path,
     )
 
     callbacks = []
@@ -300,13 +300,14 @@ def average_checkpoints(output_path: str, checkpoint_paths: List[str]):
 @click.argument('checkpoint_path', type=click.Path(exists=True))
 @click.argument('source_index_path', type=click.Path(exists=True))
 @click.argument('target_index_path', type=click.Path(exists=True))
-def test(checkpoint_path: str, tokenizer_path: str, source_index_path: str, target_index_path: str):
+def test(checkpoint_path: str, source_index_path: str, target_index_path: str):
     # model = TranslatorModelTraining.load_from_checkpoint(checkpoint_path)
     model = torch.load(checkpoint_path).eval()
 
     test_dataset_index = TranslationDatasetIndex(
         source_index=FileIndex.from_file(source_index_path),
         target_index=FileIndex.from_file(target_index_path),
+        max_length=512,
     )
 
     test_dataset = IndexedTranslationDataset(test_dataset_index)
@@ -318,7 +319,7 @@ def test(checkpoint_path: str, tokenizer_path: str, source_index_path: str, targ
     )
 
     trainer = pl.Trainer(gpus=[0])
-    trainer.test(model, test_dataloaders=test_dataloader)
+    trainer.test(model, dataloaders=test_dataloader)
 
 
 @click.command()
@@ -340,9 +341,9 @@ def inference(model_path: str):
             source_attention_masks=source_attention_mask.unsqueeze(0),
         )
 
-        print([model.tokenizer.id_to_token(x) for x in decoded_token_ids[0]])
-        print(decoded_token_ids[0])
-        print(model.tokenizer.decode(decoded_token_ids[0]))
+        print([model.tokenizer.id_to_token(x) for x in decoded_token_ids])
+        print(decoded_token_ids)
+        print(model.tokenizer.decode(decoded_token_ids))
 
 
 @click.group()

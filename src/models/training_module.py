@@ -138,17 +138,18 @@ class TranslatorModelTraining(pl.LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def test_epoch_end(self, validation_batches: List[Dict[str, Any]]):
-        avg_val_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
+        test_avg_loss = torch.stack([x['val_loss'] for x in validation_batches]).mean()
 
         target_texts = list(chain(*[x['target_texts'] for x in validation_batches]))
         decoded_texts = self.tokenizer.decode_batch(
             list(chain(*[x['decoded_token_ids'] for x in validation_batches]))
         )
 
-        val_bleu = sacrebleu.corpus_bleu(decoded_texts, [target_texts])
-
-        print('BLEU:', val_bleu.score)
-        print('Loss:', avg_val_loss)
+        test_bleu = sacrebleu.corpus_bleu(decoded_texts, [target_texts])
+        self.log_dict({
+            'test_bleu': test_bleu.score,
+            'test_avg_loss':  test_avg_loss,
+        })
 
     def loss(self, preds, batch) -> torch.FloatTensor:
         """
