@@ -49,7 +49,7 @@ def tokenize(tokenizer_path, input_file_path, output_file_path):
     df = pd.DataFrame()
     df['text'] = texts
     df['token_ids'] = [','.join(str(y) for y in x.ids) for x in encoding]
-    df.to_csv(output_file_path, sep='\t', index=None)
+    df.to_csv(output_file_path, sep='\t', index=False)
 
 
 @click.group()

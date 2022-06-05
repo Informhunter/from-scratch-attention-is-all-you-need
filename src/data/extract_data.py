@@ -13,6 +13,7 @@ class _DataFile:
     tar_path: str
     datafile_path: str
     format: str
+    skip_empty_lines: bool = False
 
     def iterate_lines(self):
         with tarfile.open(self.tar_path, 'r:gz') as tar_file:
@@ -58,13 +59,15 @@ _TRAIN_DE_FILES = [
 _DEV_EN_FILES = [
     _DataFile(tar_path='data/raw/dev.tgz',
               datafile_path='dev/newstest2013.en',
-              format='text'),
+              format='text',
+              skip_empty_lines=True),
 ]
 
 _DEV_DE_FILES = [
     _DataFile(tar_path='data/raw/dev.tgz',
               datafile_path='dev/newstest2013.de',
-              format='text'),
+              format='text',
+              skip_empty_lines=True),
 ]
 
 _TEST_FILTERED_EN_FILES = [
@@ -107,7 +110,8 @@ def _extract(input_files: List[_DataFile], output_file_path: str):
         for input_file in input_files:
             _LOGGER.info('Extracting %s:%s into %s', input_file.tar_path, input_file.datafile_path, output_file_path)
             for line in input_file.iterate_lines():
-                output_file.write(line + '\n')
+                if not input_file.skip_empty_lines or line:
+                    output_file.write(line + '\n')
 
 
 @click.command()

@@ -84,6 +84,8 @@ def beam_search_decode(
         if alpha is not None:
             length_penalty = ((5.0 + (step + 1)) / 6.0) ** alpha
             new_hypotheses_scores /= length_penalty
+        else:
+            length_penalty = 1.0
 
         # topk_scores: current_batch_size x beam_size
         # topk_ids: current_batch_size x beam_size
@@ -98,7 +100,7 @@ def beam_search_decode(
 
         # top_hypotheses_to_continue: current_batch_size x beam_size
         # top_hypotheses_continuations: current_batch_size x beam_size
-        top_hypotheses_to_continue = top_hypotheses_indices_per_beam.floor_divide(vocab_size)
+        top_hypotheses_to_continue = top_hypotheses_indices_per_beam.div(vocab_size, rounding_mode='trunc')
         top_hypotheses_continuations = top_hypotheses_indices_per_beam.fmod(vocab_size)
 
         # beam_offset: current_batch_size
@@ -147,10 +149,6 @@ def beam_search_decode(
         source_attention_masks = source_attention_masks.index_select(0, select_indices)
 
     return result
-
-
-def greedy_decode(self, model, source_encoding, source_attention_mask, max_len=128):
-    pass
 
 
 def tile(x, count, dim=0):

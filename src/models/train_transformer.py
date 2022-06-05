@@ -14,8 +14,10 @@ import pytorch_lightning as pl
 import pytorch_lightning.loggers as pl_loggers
 import optuna
 
+
 from torch.utils.data import DataLoader
 from tokenizers import Tokenizer
+from pytorch_lightning.plugins import DDPPlugin
 
 from src.models.training_module import TranslatorModelTraining
 from src.utils.train import Checkpointer
@@ -93,7 +95,10 @@ def train(
 
     callbacks = []
 
-    lr_monitor = pl.callbacks.LearningRateMonitor('step', False)
+    lr_monitor = pl.callbacks.LearningRateMonitor(
+        logging_interval='step',
+        log_momentum=False,
+    )
     callbacks.append(lr_monitor)
 
     if early_stopping:
@@ -105,8 +110,8 @@ def train(
             monitor='val_loss',
             dirpath=str(best_checkpoints_dir),
             filename='model-{step:05d}-{val_loss:.4f}-{val_bleu:.4f}',
-            every_n_val_epochs=1,
-            save_top_k=10
+            every_n_epochs=1,
+            save_top_k=10,
         )
         callbacks.append(best_checkpoints_callback)
 
@@ -127,7 +132,7 @@ def train(
         logger=tb_logger,
         max_epochs=config['trainer']['max_epochs'],
         gpus=devices,
-        strategy='ddp',
+        strategy=DDPPlugin(find_unused_parameters=False),
         precision=config['trainer']['precision'],
         accumulate_grad_batches=config['trainer']['accumulate_grad_batches'],
         val_check_interval=0.1,
@@ -297,12 +302,27 @@ def average_checkpoints(output_path: str, checkpoint_paths: List[str]):
 
 
 @click.command()
-@click.argument('checkpoint_path', type=click.Path(exists=True))
-@click.argument('source_index_path', type=click.Path(exists=True))
-@click.argument('target_index_path', type=click.Path(exists=True))
-def test(checkpoint_path: str, source_index_path: str, target_index_path: str):
-    # model = TranslatorModelTraining.load_from_checkpoint(checkpoint_path)
-    model = torch.load(checkpoint_path).eval()
+@click.option('--regular-checkpoint', 'regular_checkpoint_path', default=None)
+@click.option('--averaged-checkpoint', 'averaged_checkpoint_path', default=None)
+@click.option('--source-index', 'source_index_path')
+@click.option('--target-index', 'target_index_path')
+@click.option('--devices', default='0')
+def test(
+        regular_checkpoint_path: Optional[str],
+        averaged_checkpoint_path: Optional[str],
+        source_index_path: Optional[str],
+        target_index_path: Optional[str],
+        devices: str,
+):
+    if regular_checkpoint_path:
+        model = TranslatorModelTraining.load_from_checkpoint(regular_checkpoint_path)
+    elif averaged_checkpoint_path:
+        model = torch.load(averaged_checkpoint_path).eval()
+    else:
+        raise RuntimeError('Need to specify either --regular-checkpoint or --averaged-checkpoint')
+
+    if not source_index_path or not target_index_path:
+        raise RuntimeError('Need to specify --source-index and --target-index')
 
     test_dataset_index = TranslationDatasetIndex(
         source_index=FileIndex.from_file(source_index_path),
@@ -315,10 +335,12 @@ def test(checkpoint_path: str, source_index_path: str, target_index_path: str):
         test_dataset,
         batch_size=8,
         collate_fn=test_dataset.collate,
-        num_workers=0,
+        num_workers=16,
     )
 
-    trainer = pl.Trainer(gpus=[0])
+    devices = [int(x.strip()) for x in devices.split(',')]
+
+    trainer = pl.Trainer(accelerator='gpu', devices=devices)
     trainer.test(model, dataloaders=test_dataloader)
 
 

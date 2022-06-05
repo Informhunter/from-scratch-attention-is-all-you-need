@@ -1,6 +1,5 @@
 import pickle
 import logging
-import random
 from itertools import islice
 from typing import Tuple
 
@@ -10,8 +9,6 @@ from torch.nn.utils.rnn import pad_sequence
 
 import tokenizers
 from tokenizers import Tokenizer
-
-from tqdm import tqdm
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,8 +67,6 @@ class FileIndex:
         with open(self.filepath, 'rb') as f:
             for line in f:
                 text = line.decode('utf-8').strip()
-                if len(text) == 0:
-                    continue
                 offsets.append(current_offset)
                 lengths.append(len(line))
                 line_token_counts.append(self._get_token_count(text))
@@ -127,6 +122,12 @@ class TranslationDatasetIndex:
         self.indices = indices
         self.max_length = max_length
 
+    def get_source_token_counts(self):
+        return [self.source_index.token_counts[i] for i in self.indices]
+
+    def get_target_token_counts(self):
+        return [self.target_index.token_counts[i] for i in self.indices]
+
     def get_item(self, index: int):
         new_index = self.indices[index]
 
@@ -168,7 +169,7 @@ class IndexedPrebatchedTranslationDataset(Dataset):
             self,
             dataset_index: TranslationDatasetIndex,
             mini_batch_size: int = 1500,
-            maxi_batch_size: int = 100
+            maxi_batch_size: int = 100,
     ):
         self.dataset_index = dataset_index
         self.mini_batch_size = mini_batch_size
@@ -176,18 +177,15 @@ class IndexedPrebatchedTranslationDataset(Dataset):
         self.batches = None
         self.prebatch()
 
-    def prebatch(self, shuffle: bool = True):
+    def prebatch(self):
 
         batches = []
 
-        it = tqdm(zip(self.dataset_index.source_index.token_counts, self.dataset_index.target_index.token_counts))
-        item_index_token_length = [
+        it = zip(self.dataset_index.get_source_token_counts(), self.dataset_index.get_target_token_counts())
+        item_index_token_length = (
             (i, a + b)
             for i, (a, b) in enumerate(it)
-        ]
-
-        if shuffle:
-            random.shuffle(item_index_token_length)
+        )
 
         maxi_batch = list(islice(item_index_token_length, self.maxi_batch_size))
 
