@@ -26,6 +26,7 @@ from src.features.dataset import (
     TranslationDatasetIndex,
     FileIndex,
 )
+from src.utils.other import parse_devices
 
 
 def _is_zero_rank() -> bool:
@@ -55,11 +56,12 @@ def _init_output_dir(output_dir: str) -> Tuple[Path, Path, Path]:
 @click.argument('val_target_index_path')
 @click.argument('output_dir')
 @click.option('--from-checkpoint', default=None)
-@click.option('--config-path', default='config_base.json')
-@click.option('--devices', default='0')
+@click.option('--config-path', default='model_configs/config_base.json')
+@click.option('--devices', default='0', callback=parse_devices)
 @click.option('--no-checkpoints', is_flag=True)
 @click.option('--save-metrics', 'save_metrics_path', default=None)
 @click.option('--early-stopping', is_flag=True)
+@click.option('--seed', default=42)
 def train(
         tokenizer_path: str,
         train_source_index_path: str,
@@ -69,13 +71,14 @@ def train(
         output_dir: str,
         from_checkpoint: Optional[str],
         config_path: str,
-        devices: str,
+        devices: List[int],
         no_checkpoints: bool,
         save_metrics_path: Optional[str],
         early_stopping: bool,
+        seed: int,
 ):
 
-    pl.seed_everything(42)
+    pl.seed_everything(seed)
 
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -131,14 +134,15 @@ def train(
     trainer = pl.Trainer(
         logger=tb_logger,
         max_epochs=config['trainer']['max_epochs'],
-        gpus=devices,
+        accelerator='auto',
+        devices=devices,
         strategy=DDPPlugin(find_unused_parameters=False),
         precision=config['trainer']['precision'],
         accumulate_grad_batches=config['trainer']['accumulate_grad_batches'],
-        val_check_interval=0.1,
+        val_check_interval=config['trainer']['val_check_interval'],
         callbacks=callbacks,
         resume_from_checkpoint=from_checkpoint,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=config['trainer']['num_sanity_val_checks'],
         enable_checkpointing=not no_checkpoints,
     )
 
@@ -306,13 +310,13 @@ def average_checkpoints(output_path: str, checkpoint_paths: List[str]):
 @click.option('--averaged-checkpoint', 'averaged_checkpoint_path', default=None)
 @click.option('--source-index', 'source_index_path')
 @click.option('--target-index', 'target_index_path')
-@click.option('--devices', default='0')
+@click.option('--devices', default='0', callback=parse_devices)
 def test(
         regular_checkpoint_path: Optional[str],
         averaged_checkpoint_path: Optional[str],
         source_index_path: Optional[str],
         target_index_path: Optional[str],
-        devices: str,
+        devices: List[int],
 ):
     if regular_checkpoint_path:
         model = TranslatorModelTraining.load_from_checkpoint(regular_checkpoint_path)
@@ -327,7 +331,7 @@ def test(
     test_dataset_index = TranslationDatasetIndex(
         source_index=FileIndex.from_file(source_index_path),
         target_index=FileIndex.from_file(target_index_path),
-        max_length=512,
+        max_length=model.transformer.max_len,
     )
 
     test_dataset = IndexedTranslationDataset(test_dataset_index)
@@ -337,8 +341,6 @@ def test(
         collate_fn=test_dataset.collate,
         num_workers=16,
     )
-
-    devices = [int(x.strip()) for x in devices.split(',')]
 
     trainer = pl.Trainer(accelerator='gpu', devices=devices)
     trainer.test(model, dataloaders=test_dataloader)

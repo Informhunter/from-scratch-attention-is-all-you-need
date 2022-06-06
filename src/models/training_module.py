@@ -81,7 +81,7 @@ class TranslatorModelTraining(pl.LightningModule):
             val_index = TranslationDatasetIndex(
                 FileIndex.from_file(self.val_source_index_path),
                 FileIndex.from_file(self.val_target_index_path),
-                max_length=512,
+                max_length=self.config['model']['max_len'],
             )
             self.val_dataset = IndexedTranslationDataset(val_index)
 
@@ -93,10 +93,10 @@ class TranslatorModelTraining(pl.LightningModule):
             target_attention_masks: torch.BoolTensor,
     ) -> torch.FloatTensor:
         return self.transformer(
-            source_token_ids=source_token_ids,
-            source_attention_masks=source_attention_masks,
-            target_token_ids=target_token_ids,
-            target_attention_masks=target_attention_masks,
+            input_sequence=source_token_ids,
+            input_attention_mask=source_attention_masks,
+            output_sequence=target_token_ids,
+            output_attention_mask=target_attention_masks,
         )
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.FloatTensor:
