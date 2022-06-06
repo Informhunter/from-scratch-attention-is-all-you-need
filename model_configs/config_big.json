@@ -9,13 +9,20 @@
     "h": 16,
     "d_k": 64,
     "d_v": 64,
-    "p_drop": 0.3
+    "p_drop": 0.3,
+    "max_len": 512
+  },
+  "dataset": {
+    "batch_size": 1500,
+    "maxi_batch_size": 100,
+    "max_len": 250
   },
   "trainer": {
-    "batch_size": 16,
-    "max_epochs": 60,
+    "max_epochs": 240,
     "precision": 16,
-    "accumulate_grad_batches": 1
+    "accumulate_grad_batches": 1,
+    "val_check_interval": 0.1,
+    "num_sanity_val_checks": 0
   },
   "optimizer": {
     "learning_rate": 0.0001,
