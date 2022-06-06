@@ -11,7 +11,7 @@ setup(
         'pandas',
         'matplotlib',
         'seaborn',
-        'sklearn',
+        'scikit-learn',
         'tokenizers',
         'sacrebleu',
         'click',

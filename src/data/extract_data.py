@@ -71,24 +71,24 @@ _DEV_DE_FILES = [
 ]
 
 _TEST_FILTERED_EN_FILES = [
-    _DataFile(tar_path='data/raw/test-filtered.tgz',
+    _DataFile(tar_path='data/raw/test_filtered.tgz',
               datafile_path='test/newstest2014-deen-src.en.sgm',
               format='sgm'),
 ]
 _TEST_FILTERED_DE_FILES = [
-    _DataFile(tar_path='data/raw/test-filtered.tgz',
+    _DataFile(tar_path='data/raw/test_filtered.tgz',
               datafile_path='test/newstest2014-deen-ref.de.sgm',
               format='sgm'),
 ]
 
 _TEST_FULL_EN_FILES = [
-    _DataFile(tar_path='data/raw/test-filtered.tgz',
+    _DataFile(tar_path='data/raw/test_filtered.tgz',
               datafile_path='test/newstest2014-deen-src.en.sgm',
               format='sgm'),
 ]
 
 _TEST_FULL_DE_FILES = [
-    _DataFile(tar_path='data/raw/test-filtered.tgz',
+    _DataFile(tar_path='data/raw/test_filtered.tgz',
               datafile_path='test/newstest2014-deen-ref.de.sgm',
               format='sgm'),
 ]
