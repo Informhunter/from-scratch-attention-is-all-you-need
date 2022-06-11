@@ -153,7 +153,7 @@ def train(
 
     trainer.fit(model_training)
 
-    @pl.utilities.rank_zero_only()
+    @pl.utilities.rank_zero_only
     def _save_metrics():
         if save_metrics_path is not None:
             metrics_path = os.path.join(output_dir, save_metrics_path)
