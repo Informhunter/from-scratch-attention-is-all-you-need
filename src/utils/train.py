@@ -1,5 +1,11 @@
 import os
+
+from typing import Any, Dict
+
 import pytorch_lightning as pl
+import fsspec
+import fsspec.utils
+import torch.optim.optimizer
 
 
 class LRSchedulerVanilla:
@@ -26,7 +32,12 @@ class LRSchedulerVanilla:
 
 
 class LRSchedulerNew:
-    def __init__(self, optimizer, max_learning_rate, warmup_steps):
+    def __init__(
+            self,
+            optimizer: torch.optim.Optimizer,
+            max_learning_rate: float,
+            warmup_steps: int,
+    ):
         self.optimizer = optimizer
         self.warmup_steps = warmup_steps
         self.max_learning_rate = max_learning_rate
@@ -47,7 +58,7 @@ class LRSchedulerNew:
     def state_dict(self):
         return {key: value for key, value in self.__dict__.items() if key != 'optimizer'}
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: Dict[str, Any]):
         self.__dict__.update(state_dict)
 
 
@@ -68,7 +79,7 @@ class Checkpointer(pl.Callback):
                 self.delete_oldest_checkpoint()
         self.batch_counter += 1
 
-    def save_checkpoint(self, trainer):
+    def save_checkpoint(self, trainer: pl.Trainer):
         file_name = f'{self.checkpoint_counter}.ckpt'
         path = os.path.join(self.checkpoint_dir, file_name)
         trainer.save_checkpoint(path)
@@ -77,4 +88,6 @@ class Checkpointer(pl.Callback):
 
     def delete_oldest_checkpoint(self):
         oldest_checkpoint_path = self.last_k_checkpoint_paths.pop(0)
-        os.remove(oldest_checkpoint_path)
+        protocol = fsspec.utils.get_protocol(oldest_checkpoint_path)
+        fs = fsspec.filesystem(protocol)
+        fs.rm(oldest_checkpoint_path)

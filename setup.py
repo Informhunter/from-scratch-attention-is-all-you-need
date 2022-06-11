@@ -19,5 +19,6 @@ setup(
         'aiohttp',
         'optuna',
         'fsspec[gcs]',
+        'wandb',
     ]
 )

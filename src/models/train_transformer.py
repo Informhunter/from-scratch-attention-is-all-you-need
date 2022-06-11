@@ -9,15 +9,15 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import click
+import fsspec.utils
 import torch
 import pytorch_lightning as pl
 import pytorch_lightning.loggers as pl_loggers
 import optuna
 
-
 from torch.utils.data import DataLoader
 from tokenizers import Tokenizer
-from pytorch_lightning.plugins import DDPPlugin
+from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from src.models.training_module import TranslatorModelTraining
 from src.utils.train import Checkpointer
@@ -29,21 +29,20 @@ from src.features.dataset import (
 from src.utils.other import parse_devices
 
 
-def _is_zero_rank() -> bool:
-    return pl.utilities.distributed._get_rank() == 0
+@pl.utilities.rank_zero.rank_zero_only
+def _zero_rank_makedirs(*args, **kwargs) -> None:
+    os.makedirs(*args, **kwargs)
 
 
-def _init_output_dir(output_dir: str) -> Tuple[Path, Path, Path]:
-    output_dir = Path(output_dir)
+def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
+    best_checkpoints_dir = os.path.join(output_dir, 'best_checkpoints')
+    last_checkpoints_dir = os.path.join(output_dir, 'last_checkpoints')
+    logs_dir = os.path.join(output_dir, 'logs')
 
-    best_checkpoints_dir = output_dir / 'best_checkpoints'
-    last_checkpoints_dir = output_dir / 'last_checkpoints'
-    logs_dir = output_dir / 'logs'
-
-    if _is_zero_rank():
-        output_dir.mkdir(parents=True, exist_ok=True)
-        best_checkpoints_dir.mkdir(parents=True, exist_ok=False)
-        last_checkpoints_dir.mkdir(parents=True, exist_ok=False)
+    if fsspec.utils.get_protocol(output_dir) == 'file':
+        _zero_rank_makedirs(output_dir, exist_ok=True)
+        _zero_rank_makedirs(best_checkpoints_dir, exist_ok=True)
+        _zero_rank_makedirs(last_checkpoints_dir, exist_ok=True)
 
     return best_checkpoints_dir, last_checkpoints_dir, logs_dir
 
@@ -62,6 +61,8 @@ def _init_output_dir(output_dir: str) -> Tuple[Path, Path, Path]:
 @click.option('--save-metrics', 'save_metrics_path', default=None)
 @click.option('--early-stopping', is_flag=True)
 @click.option('--seed', default=42)
+@click.option('--project-name', default='AIAYN')
+@click.option('--run-id', default='default-run-id')
 def train(
         tokenizer_path: str,
         train_source_index_path: str,
@@ -76,6 +77,8 @@ def train(
         save_metrics_path: Optional[str],
         early_stopping: bool,
         seed: int,
+        project_name: str,
+        run_id: str,
 ):
 
     pl.seed_everything(seed)
@@ -111,7 +114,7 @@ def train(
     if not no_checkpoints:
         best_checkpoints_callback = pl.callbacks.ModelCheckpoint(
             monitor='val_loss',
-            dirpath=str(best_checkpoints_dir),
+            dirpath=best_checkpoints_dir,
             filename='model-{step:05d}-{val_loss:.4f}-{val_bleu:.4f}',
             every_n_epochs=1,
             save_top_k=10,
@@ -119,24 +122,26 @@ def train(
         callbacks.append(best_checkpoints_callback)
 
         last_n_checkpoint_callback = Checkpointer(
-            checkpoint_dir=str(last_checkpoints_dir),
+            checkpoint_dir=last_checkpoints_dir,
             checkpoint_every_n_batches=10000,
             save_last_k=10,
         )
         callbacks.append(last_n_checkpoint_callback)
 
     tb_logger = pl_loggers.TensorBoardLogger(
-        save_dir=str(logs_dir),
+        save_dir=logs_dir,
         name=None,
         version=None,
     )
 
+    wandb_logger = pl_loggers.WandbLogger(project=project_name, id=run_id)
+
     trainer = pl.Trainer(
-        logger=tb_logger,
+        logger=[tb_logger, wandb_logger],
         max_epochs=config['trainer']['max_epochs'],
         accelerator='auto',
         devices=devices,
-        strategy=DDPPlugin(find_unused_parameters=False),
+        strategy=DDPStrategy(find_unused_parameters=False),
         precision=config['trainer']['precision'],
         accumulate_grad_batches=config['trainer']['accumulate_grad_batches'],
         val_check_interval=config['trainer']['val_check_interval'],
@@ -148,12 +153,15 @@ def train(
 
     trainer.fit(model_training)
 
-    if save_metrics_path is not None and _is_zero_rank():
-        metrics_path = os.path.join(output_dir, save_metrics_path)
-        with open(metrics_path, 'w') as f:
-            metrics = copy.deepcopy(trainer.logged_metrics)
-            metrics['train_loss'] = float(metrics['train_loss'])
-            json.dump(metrics, f)
+    @pl.utilities.rank_zero_only()
+    def _save_metrics():
+        if save_metrics_path is not None:
+            metrics_path = os.path.join(output_dir, save_metrics_path)
+            with fsspec.open(metrics_path, 'w') as f:
+                metrics = copy.deepcopy(trainer.logged_metrics)
+                metrics['train_loss'] = float(metrics['train_loss'])
+                json.dump(metrics, f)
+    _save_metrics()
 
 
 @dataclass

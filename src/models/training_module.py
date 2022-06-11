@@ -260,3 +260,10 @@ class TranslatorModelTraining(pl.LightningModule):
             collate_fn=self.val_dataset.collate,
             num_workers=16,
         )
+
+    # Overwriting with default code because otherwise get MisconfigurationException for custom schedulers
+    def lr_scheduler_step(self, scheduler: Any, optimizer_idx: int, metric: Optional[Any]) -> None:
+        if metric is None:
+            scheduler.step()
+        else:
+            scheduler.step(metric)
