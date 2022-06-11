@@ -1,0 +1,14 @@
+/.git/
+/.dvc/
+/data/
+/env/
+/lightning_logs/
+/notebooks/
+/models/
+/src.egg-info/
+/.tensorboard-info/
+!/data/raw/.gitignore
+!/data/processed/.gitignore
+!/models/.gitignore
+!/.dvc/config
+!/data/raw/*.dvc

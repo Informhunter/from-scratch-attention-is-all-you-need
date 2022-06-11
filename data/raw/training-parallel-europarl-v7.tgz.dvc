@@ -1,0 +1,4 @@
+outs:
+- md5: 0506babad65241744c73e39d1c0e6f63
+  size: 29458432
+  path: training-parallel-europarl-v7.tgz

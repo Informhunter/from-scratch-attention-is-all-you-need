@@ -1,0 +1,4 @@
+outs:
+- md5: 81bbfe02e7f33b6e81785118a6e9883a
+  size: 27779072
+  path: training-parallel-nc-v9.tgz

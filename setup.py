@@ -20,5 +20,6 @@ setup(
         'optuna',
         'fsspec[gcs]',
         'wandb',
+        'dvc[gc]',
     ]
 )
