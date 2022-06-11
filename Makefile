@@ -6,10 +6,6 @@
         test \
         build-training-image
 
-
-SHELL := /bin/bash
-.SHELLFLAGS := -O extglob -c
-
 PYTHON := python3
 
 DEVICES := 0,1
@@ -86,6 +82,17 @@ train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 
 build-training-image:
 	docker build --no-cache -f ./docker/training.dockerfile -t $(TRAINING_IMAGE_NAME) .
+
+
+devbash-gpu:
+	docker run \
+		-v $(PWD):"/training" \
+		--rm \
+		--env PYTHONPATH=/training \
+		--env NVIDIA_VISIBLE_DEVICES=all \
+		--env NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+		--gpus all \
+		-ti $(TRAINING_IMAGE_NAME) /bin/bash
 
 
 test:
