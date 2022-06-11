@@ -17,5 +17,7 @@ setup(
         'click',
         'tqdm',
         'aiohttp',
+        'optuna',
+        'fsspec[gcs]',
     ]
 )
