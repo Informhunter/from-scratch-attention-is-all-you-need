@@ -10,7 +10,9 @@ PYTHON := python3
 
 DEVICES := 0,1
 
+PROJECT_NAME := attention-is-all-you-need
 TRAINING_IMAGE_NAME := aiayn-training
+TRAINING_IMAGE_URI := eu.gcr.io/$(PROJECT_NAME)/$(TRAINING_IMAGE_NAME):latest
 
 SOURCE_LANG := en
 TARGET_LANG := de
@@ -82,6 +84,7 @@ train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 
 build-training-image:
 	docker build --no-cache -f ./docker/training.dockerfile -t $(TRAINING_IMAGE_NAME) .
+	docker image tag $(TRAINING_IMAGE_NAME) $(TRAINING_IMAGE_URI)
 
 
 devbash-gpu:

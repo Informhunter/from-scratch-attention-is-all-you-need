@@ -62,7 +62,6 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
 @click.option('--early-stopping', is_flag=True)
 @click.option('--seed', default=42)
 @click.option('--project-name', default='AIAYN')
-@click.option('--run-id', default='default-run-id')
 def train(
         tokenizer_path: str,
         train_source_index_path: str,
@@ -78,7 +77,6 @@ def train(
         early_stopping: bool,
         seed: int,
         project_name: str,
-        run_id: str,
 ):
 
     pl.seed_everything(seed)
@@ -134,7 +132,7 @@ def train(
         version=None,
     )
 
-    wandb_logger = pl_loggers.WandbLogger(project=project_name, id=run_id)
+    wandb_logger = pl_loggers.WandbLogger(project=project_name)
 
     trainer = pl.Trainer(
         logger=[tb_logger, wandb_logger],
