@@ -246,19 +246,23 @@ class TranslatorModelTraining(pl.LightningModule):
         return decoded_token_ids
 
     def train_dataloader(self) -> DataLoader:
+        c = self.config['train_dataloader']
         return DataLoader(
             self.train_dataset,
             collate_fn=self.train_dataset.collate,
-            num_workers=16,
+            num_workers=c['num_workers'],
             pin_memory=True,
+            prefetch_factor=c['prefetch_factor'],
         )
 
     def val_dataloader(self) -> DataLoader:
+        c = self.config['val_dataloader']
         return DataLoader(
             self.val_dataset,
             batch_size=8,
             collate_fn=self.val_dataset.collate,
-            num_workers=16,
+            num_workers=c['num_workers'],
+            prefetch_factor=c['prefetch_factor'],
         )
 
     # Overwriting with default code because otherwise get MisconfigurationException for custom schedulers

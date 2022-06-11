@@ -62,6 +62,8 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
 @click.option('--early-stopping', is_flag=True)
 @click.option('--seed', default=42)
 @click.option('--project-name', default='AIAYN')
+@click.option('--train-num-workers', default=16)
+@click.option('--train-prefetch-factor', default=2)
 def train(
         tokenizer_path: str,
         train_source_index_path: str,
@@ -77,12 +79,17 @@ def train(
         early_stopping: bool,
         seed: int,
         project_name: str,
+        train_num_workers: int,
+        train_prefetch_factor: int,
 ):
 
     pl.seed_everything(seed)
 
     with open(config_path, 'r') as f:
         config = json.load(f)
+
+    config['train_dataloader']['num_workers'] = train_num_workers
+    config['train_dataloader']['prefetch_factor'] = train_prefetch_factor
 
     best_checkpoints_dir, last_checkpoints_dir, logs_dir = _init_output_dir(output_dir)
 

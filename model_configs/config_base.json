@@ -41,5 +41,13 @@
     "beam_size": 4,
     "max_len_factor": 50,
     "alpha": 0.6
+  },
+  "train_dataloader": {
+    "num_workers": 16,
+    "prefetch_factor": 2
+  },
+  "val_dataloader": {
+    "num_workers": 16,
+    "prefetch_factor": 2
   }
 }
