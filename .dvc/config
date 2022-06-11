@@ -1,4 +1,0 @@
-[core]
-    remote = gcremote
-['remote "gcremote"']
-    url = gs://project-aiayn/dvc/

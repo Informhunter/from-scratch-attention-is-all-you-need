@@ -1,5 +1,4 @@
 /.git/
-/.dvc/
 /data/
 /env/
 /lightning_logs/
@@ -10,5 +9,3 @@
 !/data/raw/.gitignore
 !/data/processed/.gitignore
 !/models/.gitignore
-!/.dvc/config
-!/data/raw/*.dvc

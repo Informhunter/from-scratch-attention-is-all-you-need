@@ -48,7 +48,8 @@ TRAIN_INDEXES = data/processed/train.$(SOURCE_LANG).index  data/processed/train.
 DEV_INDEXES = data/processed/dev.$(SOURCE_LANG).index  data/processed/dev.$(TARGET_LANG).index
 
 
-$(RAW_DATA): download-data
+# $(RAW_DATA): download-data
+$(RAW_DATA): download-data-gcs
 $(PROCESSED_DATA): extract-data
 $(TOKENIZER_PATH): train-tokenizer
 $(DATA_INDEXES): index-data
@@ -56,6 +57,10 @@ $(DATA_INDEXES): index-data
 
 download-data:
 	$(PYTHON) src/data/download_data.py
+
+
+download-data-gcs:
+	gsutil cp gs://project-aiayn/data/raw/* data/raw
 
 
 extract-data: $(RAW_DATA)
@@ -75,8 +80,8 @@ index-data: $(TOKENIZER_PATH) $(PROCESSED_DATA)
 train-base-model: OUTPUT_DIR=models/base_model/
 train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 	$(PYTHON) src/models/train_transformer.py train $(TOKENIZER_PATH) \
-                                                    $(TRAIN_INDEXES) \
-                                                    $(DEV_INDEXES) \
+	                                                $(TRAIN_INDEXES) \
+	                                                $(DEV_INDEXES) \
 	                                                $(OUTPUT_DIR) \
 	                                                --devices $(DEVICES) \
 	                                                --config-path ./model_configs/config_base.json
