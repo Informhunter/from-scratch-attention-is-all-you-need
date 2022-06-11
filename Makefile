@@ -80,6 +80,7 @@ index-data: $(TOKENIZER_PATH) $(PROCESSED_DATA)
 train-base-model: OUTPUT_DIR=models/base_model/
 train-base-model: TRAIN_NUM_WORKERS=16
 train-base-model: TRAIN_PREFETCH_FACTOR=2
+train-base-model: TRAIN_BATCH_SIZE=2500
 train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 	$(PYTHON) src/models/train_transformer.py train $(TOKENIZER_PATH) \
 	                                                $(TRAIN_INDEXES) \
@@ -88,7 +89,8 @@ train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 	                                                --devices $(DEVICES) \
 	                                                --config-path ./model_configs/config_base.json \
 	                                                --train-num-workers $(TRAIN_NUM_WORKERS) \
-	                                                --train-prefetch-factor $(TRAIN_PREFETCH_FACTOR)
+	                                                --train-prefetch-factor $(TRAIN_PREFETCH_FACTOR) \
+	                                                --train-batch-size $(TRAIN_BATCH_SIZE)
 
 
 build-training-image:

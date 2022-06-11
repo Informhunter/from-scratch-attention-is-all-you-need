@@ -64,6 +64,7 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
 @click.option('--project-name', default='AIAYN')
 @click.option('--train-num-workers', default=16)
 @click.option('--train-prefetch-factor', default=2)
+@click.option('--train-batch-size', default=2500)
 def train(
         tokenizer_path: str,
         train_source_index_path: str,
@@ -81,6 +82,7 @@ def train(
         project_name: str,
         train_num_workers: int,
         train_prefetch_factor: int,
+        train_batch_size: int,
 ):
 
     pl.seed_everything(seed)
@@ -90,6 +92,7 @@ def train(
 
     config['train_dataloader']['num_workers'] = train_num_workers
     config['train_dataloader']['prefetch_factor'] = train_prefetch_factor
+    config['dataset']['batch_size'] = train_batch_size
 
     best_checkpoints_dir, last_checkpoints_dir, logs_dir = _init_output_dir(output_dir)
 
