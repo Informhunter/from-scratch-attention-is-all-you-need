@@ -35,14 +35,14 @@ PROCESSED_DATA = data/processed/train.en \
                  data/processed/test_filtered.en \
                  data/processed/test_filtered.de
 
-DATA_INDEXES = data/processed/train.en \
-               data/processed/train.de \
-               data/processed/dev.en \
-               data/processed/dev.de \
-               data/processed/test_full.en \
-               data/processed/test_full.de \
-               data/processed/test_filtered.en \
-               data/processed/test_filtered.de
+DATA_INDEXES = data/processed/train.en.index \
+               data/processed/train.de.index \
+               data/processed/dev.en.index \
+               data/processed/dev.de.index \
+               data/processed/test_full.en.index \
+               data/processed/test_full.de.index \
+               data/processed/test_filtered.en.index \
+               data/processed/test_filtered.de.index
 
 TOKENIZER_PATH = models/tokenizer_en_de.json
 
@@ -50,17 +50,17 @@ TRAIN_INDEXES = data/processed/train.$(SOURCE_LANG).index  data/processed/train.
 DEV_INDEXES = data/processed/dev.$(SOURCE_LANG).index  data/processed/dev.$(TARGET_LANG).index
 
 
-$(RAW_DATA): download_data
+$(RAW_DATA): download-data
 $(PROCESSED_DATA): extract-data
 $(TOKENIZER_PATH): train-tokenizer
 $(DATA_INDEXES): index-data
 
 
-download_data:
+download-data:
 	$(PYTHON) src/data/download_data.py
 
 
-extract-data: $(PROCESSED_DATA)
+extract-data: $(RAW_DATA)
 	$(PYTHON) src/data/extract_data.py default-extract
 
 
