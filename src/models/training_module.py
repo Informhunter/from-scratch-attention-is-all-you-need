@@ -1,24 +1,28 @@
-from typing import Any, Dict, List, Optional
 from itertools import chain
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+)
 
 import pytorch_lightning as pl
-import torch
 import sacrebleu
-
+import torch
 from tokenizers import Tokenizer
 from torch.utils.data import DataLoader
 
-from src.utils.search import beam_search_decode
-from src.utils.train import (
-    LRSchedulerNew,
-    LRSchedulerVanilla,
-)
-from src.models.transformer import Transformer
 from src.features.dataset import (
     FileIndex,
     TranslationDatasetIndex,
     IndexedPrebatchedTranslationDataset,
     IndexedTranslationDataset,
+)
+from src.models.transformer import Transformer
+from src.utils.search import beam_search_decode
+from src.utils.train import (
+    LRSchedulerNew,
+    LRSchedulerVanilla,
 )
 
 
@@ -259,7 +263,7 @@ class TranslatorModelTraining(pl.LightningModule):
         c = self.config['val_dataloader']
         return DataLoader(
             self.val_dataset,
-            batch_size=8,
+            batch_size=c['batch_size'],
             collate_fn=self.val_dataset.collate,
             num_workers=c['num_workers'],
             prefetch_factor=c['prefetch_factor'],

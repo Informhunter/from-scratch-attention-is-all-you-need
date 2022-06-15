@@ -1,5 +1,8 @@
 import asyncio
-from typing import List, Tuple
+from typing import (
+    List,
+    Tuple,
+)
 
 import aiohttp
 from tqdm.asyncio import tqdm
@@ -34,9 +37,9 @@ def main():
             ('http://www.statmt.org/wmt14/dev.tgz',
              'data/raw/dev.tgz'),
             ('http://www.statmt.org/wmt14/test-filtered.tgz',
-             'data/raw/test_filtered.tgz'),
+             'data/raw/test-filtered.tgz'),
             ('http://statmt.org/wmt14/test-full.tgz',
-             'data/raw/test_full.tgz'),
+             'data/raw/test-full.tgz'),
         ]
     ))
 

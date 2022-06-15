@@ -3,41 +3,49 @@ import json
 import os.path
 import subprocess
 import sys
-
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from pprint import pprint
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+)
 
 import click
 import fsspec.utils
-import torch
+import optuna
 import pytorch_lightning as pl
 import pytorch_lightning.loggers as pl_loggers
-import optuna
-
-from torch.utils.data import DataLoader
-from tokenizers import Tokenizer
+import torch
 from pytorch_lightning.strategies.ddp import DDPStrategy
+from tokenizers import Tokenizer
+from torch.utils.data import DataLoader
 
-from src.models.training_module import TranslatorModelTraining
-from src.utils.train import Checkpointer
 from src.features.dataset import (
     IndexedTranslationDataset,
     TranslationDatasetIndex,
     FileIndex,
 )
-from src.utils.other import parse_devices
-
-
-@pl.utilities.rank_zero.rank_zero_only
-def _zero_rank_makedirs(*args, **kwargs) -> None:
-    os.makedirs(*args, **kwargs)
+from src.models.training_module import TranslatorModelTraining
+from src.utils.other import (
+    parse_devices,
+    add_unparsed_options_to_config,
+    load_config,
+)
+from src.utils.train import Checkpointer
 
 
 def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
     best_checkpoints_dir = os.path.join(output_dir, 'best_checkpoints')
     last_checkpoints_dir = os.path.join(output_dir, 'last_checkpoints')
     logs_dir = os.path.join(output_dir, 'logs')
+
+    @pl.utilities.rank_zero.rank_zero_only
+    def _zero_rank_makedirs(*args, **kwargs) -> None:
+        os.makedirs(*args, **kwargs)
 
     if fsspec.utils.get_protocol(output_dir) == 'file':
         _zero_rank_makedirs(output_dir, exist_ok=True)
@@ -47,7 +55,7 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
     return best_checkpoints_dir, last_checkpoints_dir, logs_dir
 
 
-@click.command()
+@click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
 @click.argument('tokenizer_path')
 @click.argument('train_source_index_path')
 @click.argument('train_target_index_path')
@@ -55,17 +63,16 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
 @click.argument('val_target_index_path')
 @click.argument('output_dir')
 @click.option('--from-checkpoint', default=None)
-@click.option('--config-path', default='model_configs/config_base.json')
+@click.option('--config', default='model_configs/config_base.json', callback=load_config)
 @click.option('--devices', default='0', callback=parse_devices)
 @click.option('--no-checkpoints', is_flag=True)
 @click.option('--save-metrics', 'save_metrics_path', default=None)
 @click.option('--early-stopping', is_flag=True)
 @click.option('--seed', default=42)
 @click.option('--project-name', default='AIAYN')
-@click.option('--train-num-workers', default=16)
-@click.option('--train-prefetch-factor', default=2)
-@click.option('--train-batch-size', default=2500)
+@click.pass_context
 def train(
+        ctx: click.core.Context,
         tokenizer_path: str,
         train_source_index_path: str,
         train_target_index_path: str,
@@ -73,26 +80,20 @@ def train(
         val_target_index_path: str,
         output_dir: str,
         from_checkpoint: Optional[str],
-        config_path: str,
+        config: Dict[str, Any],
         devices: List[int],
         no_checkpoints: bool,
         save_metrics_path: Optional[str],
         early_stopping: bool,
         seed: int,
         project_name: str,
-        train_num_workers: int,
-        train_prefetch_factor: int,
-        train_batch_size: int,
 ):
 
     pl.seed_everything(seed)
 
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+    add_unparsed_options_to_config(config, ctx.args)
 
-    config['train_dataloader']['num_workers'] = train_num_workers
-    config['train_dataloader']['prefetch_factor'] = train_prefetch_factor
-    config['dataset']['batch_size'] = train_batch_size
+    pprint(config)
 
     best_checkpoints_dir, last_checkpoints_dir, logs_dir = _init_output_dir(output_dir)
 
@@ -125,14 +126,14 @@ def train(
             dirpath=best_checkpoints_dir,
             filename='model-{step:05d}-{val_loss:.4f}-{val_bleu:.4f}',
             every_n_epochs=1,
-            save_top_k=10,
+            save_top_k=config['trainer']['save_best_k_checkpoints'],
         )
         callbacks.append(best_checkpoints_callback)
 
         last_n_checkpoint_callback = Checkpointer(
             checkpoint_dir=last_checkpoints_dir,
-            checkpoint_every_n_batches=10000,
-            save_last_k=10,
+            checkpoint_every_n_steps=10000,
+            save_last_k=config['trainer']['save_last_k_checkpoints'],
         )
         callbacks.append(last_n_checkpoint_callback)
 

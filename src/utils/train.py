@@ -1,10 +1,12 @@
 import os
+from typing import (
+    Any,
+    Dict,
+)
 
-from typing import Any, Dict
-
-import pytorch_lightning as pl
 import fsspec
 import fsspec.utils
+import pytorch_lightning as pl
 import torch.optim.optimizer
 
 
@@ -63,8 +65,8 @@ class LRSchedulerNew:
 
 
 class Checkpointer(pl.Callback):
-    def __init__(self, checkpoint_dir: str, checkpoint_every_n_batches: int, save_last_k: int):
-        self.checkpoint_every_n_batches = checkpoint_every_n_batches
+    def __init__(self, checkpoint_dir: str, checkpoint_every_n_steps: int, save_last_k: int):
+        self.checkpoint_every_n_steps = checkpoint_every_n_steps
         self.save_last_k = save_last_k
         self.last_k_checkpoint_paths = []
         self.checkpoint_dir = checkpoint_dir
@@ -73,7 +75,7 @@ class Checkpointer(pl.Callback):
 
     @pl.utilities.rank_zero_only  # We save checkpoints only on zero-ranked worker
     def on_train_batch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule, *args, **kwargs) -> None:
-        if (self.batch_counter + 1) % self.checkpoint_every_n_batches == 0:
+        if (self.batch_counter + 1) % self.checkpoint_every_n_steps == 0:
             self.save_checkpoint(trainer)
             if len(self.last_k_checkpoint_paths) > self.save_last_k:
                 self.delete_oldest_checkpoint()
