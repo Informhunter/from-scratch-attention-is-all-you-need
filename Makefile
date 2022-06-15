@@ -1,14 +1,13 @@
-.PHONY: download_data \
-        extract-data \
+.PHONY: extract-data \
         train-tokenizer \
         index-data \
-        train-base-model \
+        train-model \
         test \
         build-training-image
 
 PYTHON := python3
 
-DEVICES := 0,1
+DEVICES = 0,1
 
 PROJECT_NAME := attention-is-all-you-need
 TRAINING_IMAGE_NAME := aiayn-training
@@ -16,6 +15,10 @@ TRAINING_IMAGE_URI := eu.gcr.io/$(PROJECT_NAME)/$(TRAINING_IMAGE_NAME):latest
 
 SOURCE_LANG := en
 TARGET_LANG := de
+
+FETCH_DATA_MODE := original  # Possible values gcs_processed/gcs_raw/original
+
+GCP_PREFIX := gs://project-aiayn
 
 RAW_DATA = data/raw/training-parallel-nc-v9.tgz \
            data/raw/training-parallel-europarl-v7.tgz \
@@ -47,50 +50,74 @@ TOKENIZER_PATH = models/tokenizer_en_de.json
 TRAIN_INDEXES = data/processed/train.$(SOURCE_LANG).index  data/processed/train.$(TARGET_LANG).index
 DEV_INDEXES = data/processed/dev.$(SOURCE_LANG).index  data/processed/dev.$(TARGET_LANG).index
 
+# Commands
 
-# $(RAW_DATA): download-data
-$(RAW_DATA): download-data-gcs
-$(PROCESSED_DATA): extract-data
-$(TOKENIZER_PATH): train-tokenizer
-$(DATA_INDEXES): index-data
-
-
-download-data:
+define download-raw-data
 	$(PYTHON) src/data/download_data.py
+endef
 
+define download-raw-data-gcs
+	gsutil cp $(GCP_PREFIX)/data/raw/* data/raw
+endef
 
-download-data-gcs:
-	gsutil cp gs://project-aiayn/data/raw/* data/raw
+define download-processed-data-gcs
+	gsutil cp $(GCP_PREFIX)/data/processed/* data/processed
+	gsutil cp $(GCP_PREFIX)/models/tokenizer_en_de.json $(TOKENIZER_PATH)
+endef
 
-
-extract-data: $(RAW_DATA)
+define extract-data
 	$(PYTHON) src/data/extract_data.py default-extract
+endef
 
-
-train-tokenizer: data/processed/train.$(SOURCE_LANG) data/processed/train.$(TARGET_LANG)
+define train-tokenizer
 	$(PYTHON) src/features/train_tokenizer.py data/processed/train.$(SOURCE_LANG) \
 	                                          data/processed/train.$(TARGET_LANG) \
 	                                          $(TOKENIZER_PATH)
+endef
 
-
-index-data: $(TOKENIZER_PATH) $(PROCESSED_DATA)
+define index-data
 	$(PYTHON) src/features/index_data.py $(PROCESSED_DATA) $(TOKENIZER_PATH)
+endef
 
 
-train-base-model: OUTPUT_DIR=models/base_model/
-train-base-model: TRAIN_NUM_WORKERS=16
-train-base-model: TRAIN_PREFETCH_FACTOR=2
-train-base-model: TRAIN_BATCH_SIZE=2500
-train-base-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
+# Download everything (including tokenizer and data indexes) from GCS
+ifeq ($(FETCH_DATA_MODE), gcs_processed)
+$(PROCESSED_DATA) $(TOKENIZER_PATH) $(DATA_INDEXES):
+	$(call download-processed-data-gcs)
+
+# Download only raw data from GCS
+else ifeq ($(FETCH_DATA_MODE), gcs_raw)
+$(RAW_DATA):
+	$(call download-raw-data-gcs)
+$(PROCESSED_DATA): $(RAW_DATA)
+	$(call extract-data)
+$(TOKENIZER_PATH): $(PROCESSED_DATA)
+	$(call train-tokenizer)
+$(DATA_INDEXES): $(PROCESSED_DATA) $(TOKENIZER_PATH)
+	$(call index-data)
+
+# Download original raw data from WMT website
+else ifeq ($(FETCH_DATA_MODE), original)
+$(RAW_DATA):
+	$(call download-raw-data)
+$(PROCESSED_DATA): $(RAW_DATA)
+	$(call extract-data)
+$(TOKENIZER_PATH): $(PROCESSED_DATA)
+	$(call train-tokenizer)
+$(DATA_INDEXES): $(PROCESSED_DATA) $(TOKENIZER_PATH)
+	$(call index-data)
+endif
+
+train-model: OUTPUT_DIR=models/base_model/
+train-model: TRAIN_CONFIG_PATH=model_configs/config_base.json
+train-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
 	$(PYTHON) src/models/train_transformer.py train $(TOKENIZER_PATH) \
 	                                                $(TRAIN_INDEXES) \
 	                                                $(DEV_INDEXES) \
 	                                                $(OUTPUT_DIR) \
 	                                                --devices $(DEVICES) \
-	                                                --config-path ./model_configs/config_base.json \
-	                                                --train-num-workers $(TRAIN_NUM_WORKERS) \
-	                                                --train-prefetch-factor $(TRAIN_PREFETCH_FACTOR) \
-	                                                --train-batch-size $(TRAIN_BATCH_SIZE)
+	                                                --config $(TRAIN_CONFIG_PATH) \
+	                                                $(TRAIN_ARGS)
 
 
 build-training-image:
