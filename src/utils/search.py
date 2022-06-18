@@ -7,10 +7,12 @@ from typing import List, Optional
 import torch
 import torch as t
 
+from src.models.transformer import Transformer
+
 
 def beam_search_decode(
-        model,
-        encoded_source: torch.LongTensor,
+        model: Transformer,
+        encoded_source: torch.FloatTensor,
         source_attention_masks: torch.BoolTensor,
         beam_size: int = 5,
         max_len: int = 120,
