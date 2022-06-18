@@ -12,13 +12,13 @@ DEVICES = 0,1
 PROJECT_NAME := attention-is-all-you-need
 TRAINING_IMAGE_NAME := aiayn-training
 TRAINING_IMAGE_URI := eu.gcr.io/$(PROJECT_NAME)/$(TRAINING_IMAGE_NAME):latest
+GCP_PREFIX := gs://project-aiayn
 
 SOURCE_LANG := en
 TARGET_LANG := de
 
 FETCH_DATA_MODE := original  # Possible values gcs_processed/gcs_raw/original
 
-GCP_PREFIX := gs://project-aiayn
 
 RAW_DATA = data/raw/training-parallel-nc-v9.tgz \
            data/raw/training-parallel-europarl-v7.tgz \
@@ -80,7 +80,7 @@ define index-data
 endef
 
 
-# Download everything (including tokenizer and data indexes) from GCS
+# Download processed data (including tokenizer and data indexes) from GCS
 ifeq ($(FETCH_DATA_MODE), gcs_processed)
 $(PROCESSED_DATA) $(TOKENIZER_PATH) $(DATA_INDEXES):
 	$(call download-processed-data-gcs)
@@ -111,13 +111,13 @@ endif
 train-model: OUTPUT_DIR=models/base_model/
 train-model: TRAIN_CONFIG_PATH=model_configs/config_base.json
 train-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
-	$(PYTHON) src/models/train_transformer.py train $(TOKENIZER_PATH) \
-	                                                $(TRAIN_INDEXES) \
-	                                                $(DEV_INDEXES) \
-	                                                $(OUTPUT_DIR) \
-	                                                --devices $(DEVICES) \
-	                                                --config $(TRAIN_CONFIG_PATH) \
-	                                                $(TRAIN_ARGS)
+	$(PYTHON) -m src.models.transformer train $(TOKENIZER_PATH) \
+	                                          $(TRAIN_INDEXES) \
+	                                          $(DEV_INDEXES) \
+	                                          $(OUTPUT_DIR) \
+	                                          --devices $(DEVICES) \
+	                                          --config $(TRAIN_CONFIG_PATH) \
+	                                          $(TRAIN_ARGS)
 
 
 build-training-image:

@@ -83,7 +83,11 @@ class Transformer(nn.Module):
 
         return next_token_logits
 
-    def encoder_function(self, input_sequence: torch.LongTensor, input_attention_mask: torch.BoolTensor):
+    def encoder_function(
+            self,
+            input_sequence:torch.LongTensor,
+            input_attention_mask: torch.BoolTensor
+    ) -> torch.FloatTensor:
         """
         Encode input sequences into vector representations. Each position in input sequences gets a corresponding
         vector of size d_model.

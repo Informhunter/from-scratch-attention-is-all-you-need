@@ -18,7 +18,7 @@ from src.features.dataset import (
     IndexedPrebatchedTranslationDataset,
     IndexedTranslationDataset,
 )
-from src.models.transformer import Transformer
+from src.models.transformer.model import Transformer
 from src.utils.search import beam_search_decode
 from src.utils.train import (
     LRSchedulerNew,

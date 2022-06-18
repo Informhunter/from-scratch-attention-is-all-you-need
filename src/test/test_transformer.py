@@ -1,6 +1,6 @@
 import unittest
 import torch
-from src.models.transformer import Transformer
+from src.models.transformer.model import Transformer
 
 
 class TestTransformer(unittest.TestCase):

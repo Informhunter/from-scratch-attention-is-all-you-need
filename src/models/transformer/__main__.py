@@ -29,7 +29,7 @@ from src.features.dataset import (
     TranslationDatasetIndex,
     FileIndex,
 )
-from src.models.training_module import TranslatorModelTraining
+from src.models.transformer.training_module import TranslatorModelTraining
 from src.utils.other import (
     parse_devices,
     add_unparsed_options_to_config,
