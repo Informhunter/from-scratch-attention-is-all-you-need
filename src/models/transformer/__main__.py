@@ -33,7 +33,7 @@ from src.models.transformer.training_module import TranslatorModelTraining
 from src.utils.other import (
     parse_devices,
     add_unparsed_options_to_config,
-    load_config,
+    load_config, configure_logging,
 )
 from src.utils.train import Checkpointer
 
@@ -56,12 +56,12 @@ def _init_output_dir(output_dir: str) -> Tuple[str, str, str]:
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True))
-@click.argument('tokenizer_path')
-@click.argument('train_source_index_path')
-@click.argument('train_target_index_path')
-@click.argument('val_source_index_path')
-@click.argument('val_target_index_path')
-@click.argument('output_dir')
+@click.option('--tokenizer', 'tokenizer_path', required=True)
+@click.option('--train-source-index', 'train_source_index_path', required=True)
+@click.option('--train-target-index', 'train_target_index_path', required=True)
+@click.option('--val-source-index', 'val_source_index_path', required=True)
+@click.option('--val-target-index', 'val_target_index_path', required=True)
+@click.option('--output-dir', 'output_dir', required=True)
 @click.option('--from-checkpoint', default=None)
 @click.option('--config', default='model_configs/config_base.json', callback=load_config)
 @click.option('--devices', default='0', callback=parse_devices)
@@ -325,14 +325,14 @@ def average_checkpoints(output_path: str, checkpoint_paths: List[str]):
 @click.command()
 @click.option('--regular-checkpoint', 'regular_checkpoint_path', default=None)
 @click.option('--averaged-checkpoint', 'averaged_checkpoint_path', default=None)
-@click.option('--source-index', 'source_index_path')
-@click.option('--target-index', 'target_index_path')
+@click.option('--source', 'source_path', required=True)
+@click.option('--target', 'target_path', required=True)
 @click.option('--devices', default='0', callback=parse_devices)
 def test(
         regular_checkpoint_path: Optional[str],
         averaged_checkpoint_path: Optional[str],
-        source_index_path: Optional[str],
-        target_index_path: Optional[str],
+        source_path: Optional[str],
+        target_path: Optional[str],
         devices: List[int],
 ):
     if regular_checkpoint_path:
@@ -342,12 +342,9 @@ def test(
     else:
         raise RuntimeError('Need to specify either --regular-checkpoint or --averaged-checkpoint')
 
-    if not source_index_path or not target_index_path:
-        raise RuntimeError('Need to specify --source-index and --target-index')
-
     test_dataset_index = TranslationDatasetIndex(
-        source_index=FileIndex.from_file(source_index_path),
-        target_index=FileIndex.from_file(target_index_path),
+        source_index=FileIndex(filepath=source_path, tokenizer=model.tokenizer),
+        target_index=FileIndex(filepath=target_path, tokenizer=model.tokenizer),
         max_length=model.transformer.max_len,
     )
 
@@ -359,15 +356,22 @@ def test(
         num_workers=16,
     )
 
-    trainer = pl.Trainer(accelerator='gpu', devices=devices)
+    trainer = pl.Trainer(
+        accelerator='gpu',
+        devices=devices,
+        strategy='ddp',
+    )
     trainer.test(model, dataloaders=test_dataloader)
 
 
 @click.command()
-@click.argument('model_path', type=click.Path(exists=True))
-def inference(model_path: str):
+@click.option('--model', 'model_path', type=click.Path(exists=True), required=True)
+@click.option('--device', default='cpu')
+def inference(model_path: str, device: str):
+    device = torch.device(device)
+
     model = TranslatorModelTraining.load_from_checkpoint(model_path).eval()
-    model.cuda()
+    model.to(device)
 
     while True:
         text = input('Translate en-de: ')
@@ -380,10 +384,10 @@ def inference(model_path: str):
         decoded_token_ids = model.decode(
             source_token_ids=source_token_ids.unsqueeze(0),
             source_attention_masks=source_attention_mask.unsqueeze(0),
-        )
+        )[0]
 
-        print([model.tokenizer.id_to_token(x) for x in decoded_token_ids])
         print(decoded_token_ids)
+        print([model.tokenizer.id_to_token(x) for x in decoded_token_ids])
         print(model.tokenizer.decode(decoded_token_ids))
 
 
@@ -393,6 +397,7 @@ def main():
 
 
 if __name__ == '__main__':
+    configure_logging()
     main.add_command(train)
     main.add_command(tune)
     main.add_command(average_checkpoints)

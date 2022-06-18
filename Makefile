@@ -17,7 +17,9 @@ GCP_PREFIX := gs://project-aiayn
 SOURCE_LANG := en
 TARGET_LANG := de
 
-FETCH_DATA_MODE := original  # Possible values gcs_processed/gcs_raw/original
+
+# Possible values gcs_processed/gcs_raw/original
+FETCH_DATA_MODE := original
 
 
 RAW_DATA = data/raw/training-parallel-nc-v9.tgz \
@@ -47,8 +49,14 @@ DATA_INDEXES = data/processed/train.en.index \
 
 TOKENIZER_PATH = models/tokenizer_en_de.json
 
-TRAIN_INDEXES = data/processed/train.$(SOURCE_LANG).index  data/processed/train.$(TARGET_LANG).index
-DEV_INDEXES = data/processed/dev.$(SOURCE_LANG).index  data/processed/dev.$(TARGET_LANG).index
+TRAIN_SOURCE_INDEX = data/processed/train.$(SOURCE_LANG).index
+TRAIN_TARGET_INDEX = data/processed/train.$(TARGET_LANG).index
+DEV_SOURCE_INDEX = data/processed/dev.$(SOURCE_LANG).index
+DEV_TARGET_INDEX = data/processed/dev.$(TARGET_LANG).index
+TEST_SOURCE = data/processed/test_filtered.$(SOURCE_LANG)
+TEST_TARGET = data/processed/test_filtered.$(TARGET_LANG)
+
+
 
 # Commands
 
@@ -66,19 +74,18 @@ define download-processed-data-gcs
 endef
 
 define extract-data
-	$(PYTHON) src/data/extract_data.py default-extract
+	$(PYTHON) -m src.data.extract_data default-extract
 endef
 
 define train-tokenizer
-	$(PYTHON) src/features/train_tokenizer.py data/processed/train.$(SOURCE_LANG) \
+	$(PYTHON) -m src.features.train_tokenizer data/processed/train.$(SOURCE_LANG) \
 	                                          data/processed/train.$(TARGET_LANG) \
 	                                          $(TOKENIZER_PATH)
 endef
 
 define index-data
-	$(PYTHON) src/features/index_data.py $(PROCESSED_DATA) $(TOKENIZER_PATH)
+	$(PYTHON) -m src.features.index_data $(PROCESSED_DATA) $(TOKENIZER_PATH)
 endef
-
 
 # Download processed data (including tokenizer and data indexes) from GCS
 ifeq ($(FETCH_DATA_MODE), gcs_processed)
@@ -110,14 +117,24 @@ endif
 
 train-model: OUTPUT_DIR=models/base_model/
 train-model: TRAIN_CONFIG_PATH=model_configs/config_base.json
-train-model: $(TRAIN_INDEXES) $(DEV_INDEXES)
-	$(PYTHON) -m src.models.transformer train $(TOKENIZER_PATH) \
-	                                          $(TRAIN_INDEXES) \
-	                                          $(DEV_INDEXES) \
-	                                          $(OUTPUT_DIR) \
+train-model: $(TRAIN_SOURCE_INDEX) $(TRAIN_TARGET_INDEX) $(DEV_SOURCE_INDEX) $(DEV_TARGET_INDEX) $(TOKENIZER_PATH)
+	$(PYTHON) -m src.models.transformer train --tokenizer $(TOKENIZER_PATH) \
+	                                          --train-source-index $(TRAIN_SOURCE_INDEX) \
+	                                          --train-target-index $(TRAIN_TARGET_INDEX) \
+	                                          --val-source-index $(DEV_SOURCE_INDEX) \
+	                                          --val-target-index $(DEV_TARGET_INDEX) \
+	                                          --output-dir $(OUTPUT_DIR) \
 	                                          --devices $(DEVICES) \
 	                                          --config $(TRAIN_CONFIG_PATH) \
 	                                          $(TRAIN_ARGS)
+
+
+test-model: CHECKPOINT_PATH=models/model.ckpt
+test-model:
+	$(PYTHON) -m src.models.transformer test --regular-checkpoint $(CHECKPOINT_PATH) \
+	                                         --source $(TEST_SOURCE) \
+	                                         --target $(TEST_TARGET) \
+	                                         --devices $(DEVICES)
 
 
 build-training-image:

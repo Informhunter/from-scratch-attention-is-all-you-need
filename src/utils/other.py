@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import (
     Any,
     Dict,
@@ -40,3 +41,6 @@ def add_unparsed_options_to_config(config: Dict[str, Any], unparsed_args: List[s
         key = key[10:]  # Remove --config__
         set_config_value_by_path(config, key, value)
 
+
+def configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO)
