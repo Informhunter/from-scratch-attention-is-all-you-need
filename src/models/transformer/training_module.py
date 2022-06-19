@@ -9,6 +9,7 @@ from typing import (
 import pytorch_lightning as pl
 import sacrebleu
 import torch
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT
 from tokenizers import Tokenizer
 from torch.utils.data import DataLoader
 
@@ -164,6 +165,10 @@ class TranslatorModelTraining(pl.LightningModule):
             'test_bleu': test_bleu.score,
             'test_avg_loss':  test_avg_loss,
         })
+
+    def training_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
+        # Shuffle items in batches every epoch
+        self.train_dataset.prebatch(randomize=True)
 
     def loss(self, preds: torch.FloatTensor, batch: Dict[str, Any]) -> torch.FloatTensor:
         """
