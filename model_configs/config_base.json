@@ -10,7 +10,8 @@
     "d_k": 64,
     "d_v": 64,
     "p_drop": 0.1,
-    "max_len": 512
+    "max_len": 512,
+    "checkpoint_gradients": false
   },
   "dataset": {
     "batch_size": 2500,

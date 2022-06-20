@@ -176,7 +176,7 @@ class IndexedPrebatchedTranslationDataset(Dataset):
         self.mini_batch_size = mini_batch_size
         self.maxi_batch_size = maxi_batch_size
         self.batches = None
-        self.prebatch()
+        self.prebatch(randomize=True)
 
     def prebatch(self, randomize: bool = False):
 
@@ -230,4 +230,3 @@ class IndexedPrebatchedTranslationDataset(Dataset):
     @staticmethod
     def collate(batch):
         return batch[0]
-

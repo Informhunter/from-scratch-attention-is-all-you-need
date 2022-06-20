@@ -1,6 +1,7 @@
 import math
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 
 class Transformer(nn.Module):
@@ -16,6 +17,7 @@ class Transformer(nn.Module):
             d_v: int,
             p_drop: float,
             max_len: int,
+            checkpoint_gradients: bool = False
     ):
         super().__init__()
 
@@ -28,9 +30,10 @@ class Transformer(nn.Module):
         self.d_v = d_v
         self.p_drop = p_drop
         self.max_len = max_len
+        self.checkpoint_gradients = checkpoint_gradients
 
-        self.encoder = TransformerEncoder(N, d_model, d_ff, h, d_k, d_v, p_drop)
-        self.decoder = TransformerDecoder(N, d_model, d_ff, h, d_k, d_v, p_drop)
+        self.encoder = TransformerEncoder(N, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+        self.decoder = TransformerDecoder(N, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
         self.dropout = nn.Dropout(p=p_drop)
 
         self.positional_encoding = PositionalEncoding(d_model, max_len)
@@ -85,7 +88,7 @@ class Transformer(nn.Module):
 
     def encoder_function(
             self,
-            input_sequence:torch.LongTensor,
+            input_sequence: torch.LongTensor,
             input_attention_mask: torch.BoolTensor
     ) -> torch.FloatTensor:
         """
@@ -104,7 +107,7 @@ class Transformer(nn.Module):
 
     def decoder_function(
             self,
-            encoded_input_sequence: torch.LongTensor,
+            encoded_input_sequence: torch.FloatTensor,
             input_attention_mask: torch.BoolTensor,
             output_sequence: torch.LongTensor,
             output_attention_mask: torch.BoolTensor,
@@ -141,6 +144,7 @@ class TransformerEncoder(nn.Module):
             d_k: int,
             d_v: int,
             p_drop: float,
+            checkpoint_gradients: bool = False,
     ):
         super().__init__()
 
@@ -151,9 +155,10 @@ class TransformerEncoder(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
         self.p_drop = p_drop
+        self.checkpoint_gradients = checkpoint_gradients
 
         self.encoder_layers = nn.ModuleList([
-            TransformerEncoderLayer(d_model, d_ff, h, d_k, d_v, p_drop)
+            TransformerEncoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
             for _ in range(N)
         ])
 
@@ -183,6 +188,7 @@ class TransformerEncoderLayer(nn.Module):
             d_k: int,
             d_v: int,
             p_drop: float,
+            checkpoint_gradients: bool = False
     ):
         super().__init__()
 
@@ -192,6 +198,7 @@ class TransformerEncoderLayer(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
         self.p_drop = p_drop
+        self.checkpoint_gradients = checkpoint_gradients
 
         self.multi_head_attention = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=False)
         self.feed_forward = FeedForward(d_model, d_ff)
@@ -207,18 +214,30 @@ class TransformerEncoderLayer(nn.Module):
         """
 
         # Apply self-attention
-        self_attention = self.multi_head_attention(
+        if self.checkpoint_gradients:
+            self_attention = checkpoint(
+                self.multi_head_attention,
                 encoded_input,
                 encoded_input,
                 encoded_input,
                 attention_mask,
             )
+        else:
+            self_attention = self.multi_head_attention(
+                    encoded_input,
+                    encoded_input,
+                    encoded_input,
+                    attention_mask,
+                )
 
         self_attention = self.dropout(self_attention)
         encoded_input = self.layer_norm_1(encoded_input + self_attention)
 
         # Apply feed-forward layers
-        feed_forward = self.feed_forward(encoded_input)
+        if self.checkpoint_gradients:
+            feed_forward = checkpoint(self.feed_forward, encoded_input)
+        else:
+            feed_forward = self.feed_forward(encoded_input)
         feed_forward = self.dropout(feed_forward)
 
         encoded_input = self.layer_norm_2(encoded_input + feed_forward)
@@ -235,7 +254,8 @@ class TransformerDecoder(nn.Module):
             h: int,
             d_k: int,
             d_v: int,
-            p_drop: float
+            p_drop: float,
+            checkpoint_gradients: bool = False,
     ):
         super().__init__()
 
@@ -246,9 +266,10 @@ class TransformerDecoder(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
         self.p_drop = p_drop
+        self.checkpoint_gradients = False
 
         self.decoder_layers = nn.ModuleList([
-            TransformerDecoderLayer(d_model, d_ff, h, d_k, d_v, p_drop)
+            TransformerDecoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
             for _ in range(N)
         ])
 
@@ -274,7 +295,8 @@ class TransformerDecoderLayer(nn.Module):
             h: int,
             d_k: int,
             d_v: int,
-            p_drop: float
+            p_drop: float,
+            checkpoint_gradients: bool = False,
     ):
         super().__init__()
 
@@ -284,6 +306,7 @@ class TransformerDecoderLayer(nn.Module):
         self.d_k = d_k
         self.d_v = d_v
         self.p_drop = p_drop
+        self.checkpoint_gradients = checkpoint_gradients
 
         self.multi_head_attention_1 = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=True)
         self.multi_head_attention_2 = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=False)
@@ -302,28 +325,49 @@ class TransformerDecoderLayer(nn.Module):
     ) -> torch.FloatTensor:
 
         # Apply self-attention
-        self_attention = self.multi_head_attention_1(
-            queries=output_sequence_encoding,
-            keys=output_sequence_encoding,
-            values=output_sequence_encoding,
-            keys_attention_mask=output_attention_mask,
-        )
+        if self.checkpoint_gradients:
+            self_attention = checkpoint(
+                self.multi_head_attention_1,
+                output_sequence_encoding,
+                output_sequence_encoding,
+                output_sequence_encoding,
+                output_attention_mask,
+            )
+        else:
+            self_attention = self.multi_head_attention_1(
+                queries=output_sequence_encoding,
+                keys=output_sequence_encoding,
+                values=output_sequence_encoding,
+                keys_attention_mask=output_attention_mask,
+            )
 
         self_attention = self.dropout(self_attention)
         output_sequence_encoding = self.layer_norm_1(output_sequence_encoding + self_attention)
 
         # Apply cross-attention over encoder output
-        cross_attention = self.multi_head_attention_2(
-            queries=output_sequence_encoding,
-            keys=input_sequence_encoding,
-            values=input_sequence_encoding,
-            keys_attention_mask=input_attention_mask,
-        )
+        if self.checkpoint_gradients:
+            cross_attention = checkpoint(
+                self.multi_head_attention_2,
+                output_sequence_encoding,
+                input_sequence_encoding,
+                input_sequence_encoding,
+                input_attention_mask,
+            )
+        else:
+            cross_attention = self.multi_head_attention_2(
+                queries=output_sequence_encoding,
+                keys=input_sequence_encoding,
+                values=input_sequence_encoding,
+                keys_attention_mask=input_attention_mask,
+            )
         cross_attention = self.dropout(cross_attention)
         output_sequence_encoding = self.layer_norm_2(output_sequence_encoding + cross_attention)
 
         # Apply feed-forward layers
-        feed_forward = self.feed_forward(output_sequence_encoding)
+        if self.checkpoint_gradients:
+            feed_forward = checkpoint(self.feed_forward, output_sequence_encoding)
+        else:
+            feed_forward = self.feed_forward(output_sequence_encoding)
         feed_forward = self.dropout(feed_forward)
         output_sequence_encoding = self.layer_norm_3(output_sequence_encoding + feed_forward)
 
