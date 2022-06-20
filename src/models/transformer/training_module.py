@@ -50,6 +50,7 @@ class TranslatorModelTraining(pl.LightningModule):
             d_v=c['d_v'],
             p_drop=c['p_drop'],
             max_len=c['max_len'],
+            checkpoint_gradients=c['checkpoint_gradients'],
         )
         self.transformer = transformer
         self.tokenizer = tokenizer

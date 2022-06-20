@@ -25,7 +25,10 @@ def set_config_value_by_path(config: Dict[str, Any], path: str, value: Any):
     for path_part in path_parts[:-1]:
         config = config[path_part]
     value_type = type(config[last_part])
-    config[last_part] = value_type(value)
+    if value_type is not bool:
+        config[last_part] = value_type(value)
+    else:
+        config[last_part] = value in ['1', 'True', 'true']
 
 
 def add_unparsed_options_to_config(config: Dict[str, Any], unparsed_args: List[str]):

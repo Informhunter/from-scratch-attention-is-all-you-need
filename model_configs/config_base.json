@@ -15,7 +15,7 @@
   },
   "dataset": {
     "batch_size": 2500,
-    "maxi_batch_size": 100,
+    "maxi_batch_size": 1000,
     "max_len": 250
   },
   "trainer": {

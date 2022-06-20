@@ -170,47 +170,57 @@ class IndexedPrebatchedTranslationDataset(Dataset):
             self,
             dataset_index: TranslationDatasetIndex,
             mini_batch_size: int = 1500,
-            maxi_batch_size: int = 100,
+            maxi_batch_size: int = 1000,
     ):
         self.dataset_index = dataset_index
         self.mini_batch_size = mini_batch_size
         self.maxi_batch_size = maxi_batch_size
         self.batches = None
-        self.prebatch(randomize=True)
+        self.prebatch(randomize=False)
 
     def prebatch(self, randomize: bool = False):
 
         batches = []
 
         it = zip(self.dataset_index.get_source_token_counts(), self.dataset_index.get_target_token_counts())
-        item_index_token_length = [
-            (i, a + b)
+        item_index_token_lengths = [
+            (i, a, b)
             for i, (a, b) in enumerate(it)
         ]
 
         if randomize:
-            random.shuffle(item_index_token_length)
+            random.shuffle(item_index_token_lengths)
 
-        item_index_token_length_iter = iter(item_index_token_length)
+        item_index_token_lengths_iter = iter(item_index_token_lengths)
 
         batch = []
-        cumulative_batch_size = 0
-        maxi_batch = list(islice(item_index_token_length_iter, self.maxi_batch_size))
+        source_max_length = 0
+        target_max_length = 0
+
+        maxi_batch = list(islice(item_index_token_lengths_iter, self.maxi_batch_size))
 
         while maxi_batch:
-            maxi_batch = sorted(maxi_batch, key=lambda x: x[1])
+            maxi_batch = sorted(maxi_batch, key=lambda x: x[1] + x[2])
 
-            for i, token_length in maxi_batch:
+            for i, source_length, target_length in maxi_batch:
 
-                if cumulative_batch_size + token_length > self.mini_batch_size:
+                source_max_length_local = max(source_max_length, source_length)
+                target_max_length_local = max(target_max_length, target_length)
+
+                cumulative_batch_size = (source_max_length_local + target_max_length_local) * (len(batch) + 1)
+
+                if cumulative_batch_size > self.mini_batch_size:
                     batches.append(batch)
+                    source_max_length = 0
+                    target_max_length = 0
                     batch = []
-                    cumulative_batch_size = 0
 
-                cumulative_batch_size += token_length
+                source_max_length = max(source_max_length, source_length)
+                target_max_length = max(target_max_length, target_length)
+
                 batch.append(i)
 
-            maxi_batch = list(islice(item_index_token_length_iter, self.maxi_batch_size))
+            maxi_batch = list(islice(item_index_token_lengths_iter, self.maxi_batch_size))
 
         if len(batch) > 0:
             batches.append(batch)
