@@ -167,10 +167,6 @@ class TranslatorModelTraining(pl.LightningModule):
             'test_avg_loss':  test_avg_loss,
         })
 
-    def training_epoch_end(self, outputs: EPOCH_OUTPUT) -> None:
-        # Shuffle items in batches every epoch
-        self.train_dataset.prebatch(randomize=True)
-
     def loss(self, preds: torch.FloatTensor, batch: Dict[str, Any]) -> torch.FloatTensor:
         """
         :param preds: batch_size x input_seq_len x vocab_size
