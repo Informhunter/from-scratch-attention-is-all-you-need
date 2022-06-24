@@ -32,11 +32,29 @@ class Transformer(nn.Module):
         self.max_len = max_len
         self.checkpoint_gradients = checkpoint_gradients
 
-        self.encoder = TransformerEncoder(n_layers, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
-        self.decoder = TransformerDecoder(n_layers, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+        self.encoder = TransformerEncoder(
+            n_layers=n_layers,
+            d_model=d_model,
+            d_ff=d_ff,
+            h=h,
+            d_k=d_k,
+            d_v=d_v,
+            p_drop=p_drop,
+            checkpoint_gradients=checkpoint_gradients,
+        )
+        self.decoder = TransformerDecoder(
+            n_layers=n_layers,
+            d_model=d_model,
+            d_ff=d_ff,
+            h=h,
+            d_k=d_k,
+            d_v=d_v,
+            p_drop=p_drop,
+            checkpoint_gradients=checkpoint_gradients,
+        )
         self.dropout = nn.Dropout(p=p_drop)
 
-        self.positional_encoding = PositionalEncoding(d_model, max_len)
+        self.positional_encoding = PositionalEncoding(d_model=d_model, max_len=max_len)
 
         # Input embedding, output embedding and next_token_classifier share same weights
         self.input_embedding = nn.Embedding(
@@ -158,7 +176,15 @@ class TransformerEncoder(nn.Module):
         self.checkpoint_gradients = checkpoint_gradients
 
         self.encoder_layers = nn.ModuleList([
-            TransformerEncoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+            TransformerEncoderLayer(
+                d_model=d_model,
+                d_ff=d_ff,
+                h=h,
+                d_k=d_k,
+                d_v=d_v,
+                p_drop=p_drop,
+                checkpoint_gradients=checkpoint_gradients,
+            )
             for _ in range(n_layers)
         ])
 
@@ -200,10 +226,16 @@ class TransformerEncoderLayer(nn.Module):
         self.p_drop = p_drop
         self.checkpoint_gradients = checkpoint_gradients
 
-        self.multi_head_attention = MultiHeadAttention(d_model, h, d_k, d_v, mask_back_connections=False)
-        self.feed_forward = FeedForward(d_model, d_ff)
-        self.layer_norm_1 = nn.LayerNorm(d_model)
-        self.layer_norm_2 = nn.LayerNorm(d_model)
+        self.multi_head_attention = MultiHeadAttention(
+            d_model=d_model,
+            h=h,
+            d_k=d_k,
+            d_v=d_v,
+            mask_back_connections=False,
+        )
+        self.feed_forward = FeedForward(d_model=d_model, d_ff=d_ff)
+        self.layer_norm_1 = nn.LayerNorm(normalized_shape=d_model)
+        self.layer_norm_2 = nn.LayerNorm(normalized_shape=d_model)
         self.dropout = nn.Dropout(p=p_drop)
 
     def forward(self, encoded_input: torch.FloatTensor, attention_mask: torch.BoolTensor) -> torch.FloatTensor:
@@ -224,10 +256,10 @@ class TransformerEncoderLayer(nn.Module):
             )
         else:
             self_attention = self.multi_head_attention(
-                    encoded_input,
-                    encoded_input,
-                    encoded_input,
-                    attention_mask,
+                    queries=encoded_input,
+                    keys=encoded_input,
+                    values=encoded_input,
+                    keys_attention_mask=attention_mask,
                 )
 
         self_attention = self.dropout(self_attention)
@@ -269,7 +301,15 @@ class TransformerDecoder(nn.Module):
         self.checkpoint_gradients = False
 
         self.decoder_layers = nn.ModuleList([
-            TransformerDecoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+            TransformerDecoderLayer(
+                d_model=d_model,
+                d_ff=d_ff,
+                h=h,
+                d_k=d_k,
+                d_v=d_v,
+                p_drop=p_drop,
+                checkpoint_gradients=checkpoint_gradients,
+            )
             for _ in range(n_layers)
         ])
 
@@ -282,7 +322,10 @@ class TransformerDecoder(nn.Module):
     ) -> torch.FloatTensor:
         for decoder_layer in self.decoder_layers:
             output_sequence_encoding = decoder_layer(
-                input_sequence_encoding, input_attention_mask, output_sequence_encoding, output_attention_mask
+                input_sequence_encoding=input_sequence_encoding,
+                input_attention_mask=input_attention_mask,
+                output_sequence_encoding=output_sequence_encoding,
+                output_attention_mask=output_attention_mask,
             )
         return output_sequence_encoding
 
@@ -474,8 +517,8 @@ class MultiHeadAttention(nn.Module):
         device = keys_attention_mask.device
 
         set_to_minus_inf = torch.full(
-            (1, batch_size, queries_len, keys_len),
-            False,
+            size=(1, batch_size, queries_len, keys_len),
+            fill_value=False,
             dtype=torch.bool,
             device=device,
         )
