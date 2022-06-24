@@ -56,4 +56,4 @@ make test-model CHECKPOINT_PATH="" \
 
 - Joey NMT (fast beam search implementation) https://github.com/joeynmt/joeynmt
 - Attention Is All You Need https://arxiv.org/abs/1706.03762
-- Training Tips for the Transformer Model https://ufal.mff.cuni.cz/pbml/110/art-popel-bojar.pdf:w
+- Training Tips for the Transformer Model https://ufal.mff.cuni.cz/pbml/110/art-popel-bojar.pdf

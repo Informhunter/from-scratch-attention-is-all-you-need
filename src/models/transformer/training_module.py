@@ -42,7 +42,7 @@ class TranslatorModelTraining(pl.LightningModule):
         c = config['model']
         transformer = Transformer(
             vocab_size=tokenizer.get_vocab_size(),
-            N=c['N'],
+            n_layers=c['n_layers'],
             d_model=c['d_model'],
             d_ff=c['d_ff'],
             h=c['h'],

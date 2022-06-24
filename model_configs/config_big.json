@@ -3,7 +3,7 @@
     "vocab_size": 37000
   },
   "model": {
-    "N": 6,
+    "n_layers": 6,
     "d_model": 1024,
     "d_ff": 4096,
     "h": 16,
@@ -15,7 +15,7 @@
   },
   "dataset": {
     "batch_size": 1500,
-    "maxi_batch_size": 1000,
+    "maxi_batch_size": 100,
     "max_len": 250
   },
   "trainer": {

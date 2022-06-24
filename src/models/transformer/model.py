@@ -9,7 +9,7 @@ class Transformer(nn.Module):
     def __init__(
             self,
             vocab_size: int,
-            N: int,
+            n_layers: int,
             d_model: int,
             d_ff: int,
             h: int,
@@ -22,7 +22,7 @@ class Transformer(nn.Module):
         super().__init__()
 
         self.vocab_size = vocab_size
-        self.N = N
+        self.n_layers = n_layers
         self.d_model = d_model
         self.d_ff = d_ff
         self.h = h
@@ -32,8 +32,8 @@ class Transformer(nn.Module):
         self.max_len = max_len
         self.checkpoint_gradients = checkpoint_gradients
 
-        self.encoder = TransformerEncoder(N, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
-        self.decoder = TransformerDecoder(N, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+        self.encoder = TransformerEncoder(n_layers, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
+        self.decoder = TransformerDecoder(n_layers, d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
         self.dropout = nn.Dropout(p=p_drop)
 
         self.positional_encoding = PositionalEncoding(d_model, max_len)
@@ -137,7 +137,7 @@ class Transformer(nn.Module):
 class TransformerEncoder(nn.Module):
     def __init__(
             self,
-            N: int,
+            n_layers: int,
             d_model: int,
             d_ff: int,
             h: int,
@@ -148,7 +148,7 @@ class TransformerEncoder(nn.Module):
     ):
         super().__init__()
 
-        self.N = N
+        self.n_layers = n_layers
         self.d_model = d_model
         self.d_ff = d_ff
         self.h = h
@@ -159,7 +159,7 @@ class TransformerEncoder(nn.Module):
 
         self.encoder_layers = nn.ModuleList([
             TransformerEncoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
-            for _ in range(N)
+            for _ in range(n_layers)
         ])
 
     def forward(self, encoded_input_sequence, input_attention_mask):
@@ -248,7 +248,7 @@ class TransformerEncoderLayer(nn.Module):
 class TransformerDecoder(nn.Module):
     def __init__(
             self,
-            N: int,
+            n_layers: int,
             d_model: int,
             d_ff: int,
             h: int,
@@ -259,7 +259,7 @@ class TransformerDecoder(nn.Module):
     ):
         super().__init__()
 
-        self.N = N
+        self.n_layers = n_layers
         self.d_model = d_model
         self.d_ff = d_ff
         self.h = h
@@ -270,7 +270,7 @@ class TransformerDecoder(nn.Module):
 
         self.decoder_layers = nn.ModuleList([
             TransformerDecoderLayer(d_model, d_ff, h, d_k, d_v, p_drop, checkpoint_gradients)
-            for _ in range(N)
+            for _ in range(n_layers)
         ])
 
     def forward(
