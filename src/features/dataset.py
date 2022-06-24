@@ -193,14 +193,13 @@ class IndexedPrebatchedTranslationDataset(Dataset):
 
         item_index_token_lengths_iter = iter(item_index_token_lengths)
 
+        batch = []
+        source_max_length = 0
+        target_max_length = 0
+
         maxi_batch = list(islice(item_index_token_lengths_iter, self.maxi_batch_size))
 
         while maxi_batch:
-
-            batch = []
-            source_max_length = 0
-            target_max_length = 0
-
             maxi_batch = sorted(maxi_batch, key=lambda x: x[1] + x[2])
 
             for i, source_length, target_length in maxi_batch:
@@ -221,10 +220,10 @@ class IndexedPrebatchedTranslationDataset(Dataset):
 
                 batch.append(i)
 
-            if len(batch) > 0:
-                batches.append(batch)
-
             maxi_batch = list(islice(item_index_token_lengths_iter, self.maxi_batch_size))
+
+        if len(batch) > 0:
+            batches.append(batch)
 
         self.batches = batches
 
