@@ -81,6 +81,7 @@ class TranslatorModelTraining(pl.LightningModule):
                 dataset_index=train_index,
                 mini_batch_size=self.config['dataset']['batch_size'],
                 maxi_batch_size=self.config['dataset']['maxi_batch_size'],
+                max_batch_length=self.config['dataset']['max_batch_length'],
             )
 
         if self.val_source_index_path is not None and self.val_target_index_path is not None:
@@ -114,7 +115,16 @@ class TranslatorModelTraining(pl.LightningModule):
         )
 
         loss = self.loss(preds, batch)
-        self.log('train_loss', loss.detach().cpu())
+
+        batch_length = batch['source_token_ids'].shape[0]
+        sequence_length = (
+                batch['source_token_ids'].shape[1] +
+                batch['source_token_ids'].shape[2]
+        )
+
+        self.log('train_loss', loss.detach().cpu().item())
+        self.log('batch_length', batch_length)
+        self.log('sequence_length', sequence_length)
         return loss
 
     def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> Dict[str, Any]:
